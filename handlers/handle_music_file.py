@@ -26,10 +26,10 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     artist_name_md = escape_md(artist_name)
 
     # Caption: monospace
-    caption = f'`{track_name_md} — {artist_name_md}`'
+    #caption = f'`{track_name_md} — {artist_name_md}`'
 
     # Caption: quote first, then monospace
-    #caption = f'> `"{track_name_md} — {artist_name_md}"`'
+    caption = f'> `"{track_name_md} — {artist_name_md}"`'
 
     # create inline button
     button = InlineKeyboardMarkup(
