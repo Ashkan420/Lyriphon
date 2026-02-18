@@ -46,10 +46,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
     author_name = user.full_name if user else "Unknown User"
-    author_url = ""
+    author_url = "https://t.me/bichniga"
 
-    if user and user.username:
-        author_url = f"https://t.me/{user.username}"
+    #if user and user.username:
+    #    author_url = f"https://t.me/{user.username}"
 
     await query.edit_message_text("⏳ Creating Telegraph page...")
 

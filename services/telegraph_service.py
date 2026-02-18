@@ -25,12 +25,10 @@ def create_song_telegraph(
         lyrics = "Lyrics not found."
 
     content = [
+
         {
-            "tag": "a",
-            "attrs": {"href": CHANNEL_LINK},
-            "children": [
-                {"tag": "img", "attrs": {"src": album_cover_url}}
-            ]
+            "tag": "img",
+            "attrs": {"src": album_cover_url}
         },
 
         {"tag": "p", "children": [
