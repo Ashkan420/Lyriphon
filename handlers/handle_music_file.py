@@ -1,6 +1,15 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from config import CHANNEL_ID
+
+# escape special characters for MarkdownV2
+def escape_md(text: str):
+    escape_chars = r'\_*[]()~`>#+-=|{}.!'
+    for char in escape_chars:
+        text = text.replace(char, f"\\{char}")
+    return text
+
 
 async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -17,12 +26,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not telegraph_url:
         return  # nothing to attach
     
-    # escape special characters for MarkdownV2
-    def escape_md(text: str):
-        escape_chars = r'\_*[]()~`>#+-=|{}.!'
-        for char in escape_chars:
-            text = text.replace(char, f"\\{char}")
-        return text
+
 
     track_name_md = escape_md(track_name)
     artist_name_md = escape_md(artist_name)
@@ -38,7 +42,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
     )
 
-    # copy the message with caption + button
+    # attach button to the audio in the chat
     await context.bot.copy_message(
         chat_id=update.effective_chat.id,
         from_chat_id=music_msg.chat_id,
@@ -47,6 +51,23 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.MARKDOWN_V2,
         reply_markup=button
     )
+
+    
+    # store audio file_id for later sending to channel
+    if music_msg.audio:
+        context.user_data["pending_audio_file_id"] = music_msg.audio.file_id
+        context.user_data["pending_caption"] = caption
+        context.user_data["pending_telegraph_url"] = telegraph_url
+
+    # ask if user wants to send to channel (only if channel id exists)
+    if CHANNEL_ID:
+        prompt = await update.message.reply_text(
+            "Send to channel?",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("✅ Yes", callback_data="send_to_channel")]]
+            )
+        )
+        context.user_data["send_channel_prompt_id"] = prompt.message_id
 
     # clear user data so next file doesn't reuse old Telegraph
     context.user_data["last_telegraph"] = None

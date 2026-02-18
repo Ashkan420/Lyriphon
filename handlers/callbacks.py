@@ -1,11 +1,49 @@
-from multiprocessing import context
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from services.deezer_api import get_track, get_album
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph
+from telegram.constants import ParseMode
+from config import CHANNEL_ID
 
+async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
 
+    if not CHANNEL_ID:
+        await query.edit_message_text("❌ No channel configured.")
+        return
+
+    audio_file_id = context.user_data.get("pending_audio_file_id")
+    caption = context.user_data.get("pending_caption")
+    telegraph_url = context.user_data.get("pending_telegraph_url")
+
+    if not audio_file_id or not telegraph_url or not caption:
+        await query.edit_message_text("❌ Nothing to send.")
+        return
+
+    button = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
+    )
+
+    await context.bot.send_audio(
+        chat_id=CHANNEL_ID,
+        audio=audio_file_id,
+        caption=caption,
+        parse_mode=ParseMode.MARKDOWN_V2,
+        reply_markup=button
+    )
+
+    await query.edit_message_text("✅ Sent to channel!")
+
+    context.user_data["send_channel_prompt_id"] = None
+
+    await query.delete_message()
+
+    # cleanup
+    context.user_data["pending_audio_file_id"] = None
+    context.user_data["pending_caption"] = None
+    context.user_data["pending_telegraph_url"] = None
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

@@ -1,5 +1,3 @@
-from multiprocessing import context
-from turtle import update
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
@@ -12,6 +10,16 @@ def format_duration(seconds: int):
 
 
 async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    # delete pending "send to channel?" message if it exists
+    prompt_id = context.user_data.get("send_channel_prompt_id")
+    if prompt_id:
+        try:
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=prompt_id)
+        except:
+            pass
+        context.user_data["send_channel_prompt_id"] = None
+
     if not context.args:
         await update.message.reply_text("❌ Usage: /song <track name>")
         return
