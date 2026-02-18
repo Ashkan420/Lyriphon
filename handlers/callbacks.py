@@ -4,15 +4,18 @@ from services.deezer_api import get_track, get_album
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph
 from telegram.constants import ParseMode
-from config import CHANNEL_ID
+
 
 async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if not CHANNEL_ID:
-        await query.edit_message_text("❌ No channel configured.")
+    data = query.data
+
+    if not data.startswith("send_channel_"):
         return
+
+    channel_id = int(data.replace("send_channel_", ""))
 
     audio_file_id = context.user_data.get("pending_audio_file_id")
     caption = context.user_data.get("pending_caption")
@@ -22,12 +25,22 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text("❌ Nothing to send.")
         return
 
+    # check if user is admin in that channel
+    try:
+        member = await context.bot.get_chat_member(channel_id, query.from_user.id)
+        if member.status not in ["administrator", "creator"]:
+            await query.answer("❌ You are not an admin in this channel.", show_alert=True)
+            return
+    except:
+        await query.answer("❌ Can't access this channel.", show_alert=True)
+        return
+
     button = InlineKeyboardMarkup(
         [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
     )
 
     await context.bot.send_audio(
-        chat_id=CHANNEL_ID,
+        chat_id=channel_id,
         audio=audio_file_id,
         caption=caption,
         parse_mode=ParseMode.MARKDOWN_V2,
@@ -40,10 +53,15 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
 
     await query.delete_message()
 
+    print("CALLBACK DATA:", query.data)
+    print("CHANNEL ID:", channel_id)
+
     # cleanup
     context.user_data["pending_audio_file_id"] = None
     context.user_data["pending_caption"] = None
     context.user_data["pending_telegraph_url"] = None
+    context.user_data["send_channel_prompt_id"] = None
+
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -112,7 +130,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["last_track_name"] = track_name
     context.user_data["last_artist_name"] = artist_name
 
-  # Send a message with an inline button linking to the Telegraph page
+    # Send a message with an inline button linking to the Telegraph page
     button = InlineKeyboardMarkup(
         [[InlineKeyboardButton("Click for Lyrics 🎵", url=telegraph_url)]]
     )
