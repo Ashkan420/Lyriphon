@@ -5,7 +5,7 @@ import services.channel_store as store
 
 async def track_channels(update: ChatMemberUpdated, context: ContextTypes.DEFAULT_TYPE):
     chat = update.my_chat_member.chat
-    user_id = update.my_chat_member.from_user.id  # the user who added the bot
+    user_id = update.my_chat_member.from_user.id  # the user who added/removed the bot
     status = update.my_chat_member.new_chat_member.status
 
     # Bot added as admin/creator -> save channel for that user

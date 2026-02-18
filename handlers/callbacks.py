@@ -94,11 +94,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get release date from album endpoint
     release_date = "Unknown"
     if album_id:
-        await query.edit_message_text("⏳ Fetching album release date...")
+        await query.edit_message_text("⏳ Fetching metadata...")
         album_info = get_album(album_id)
         release_date = album_info.get("release_date", "Unknown")
 
-    await query.edit_message_text("⏳ Fetching lyrics from LRCLIB...")
+    await query.edit_message_text("⏳ Fetching lyrics...")
 
     lyrics = get_lyrics(track_name, artist_name)
 

@@ -26,8 +26,6 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = " ".join(context.args)
 
-    await update.message.reply_text("🔍 Searching Deezer...")
-
     results = search_tracks(query)
 
     if not results:
