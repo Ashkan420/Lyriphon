@@ -1,3 +1,5 @@
+from multiprocessing import context
+from turtle import update
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
@@ -43,3 +45,6 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎵 Select the track:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
+
+
+

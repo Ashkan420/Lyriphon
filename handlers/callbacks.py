@@ -1,8 +1,10 @@
-from telegram import Update
+from multiprocessing import context
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from services.deezer_api import get_track, get_album
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph
+
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -67,6 +69,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lyrics=lyrics
     )
 
+    # store it for this user
+    context.user_data["last_telegraph"] = telegraph_url
+    context.user_data["last_track_name"] = track_name
+    context.user_data["last_artist_name"] = artist_name
+
+  # Send a message with an inline button linking to the Telegraph page
+    button = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Click for Lyrics 🎵", url=telegraph_url)]]
+    )
+
     await query.edit_message_text(
-        f"✅ Telegraph created!\n\n🔗 {telegraph_url}"
+        "✅ Telegraph created! Click the button below to open it:",
+        reply_markup=button
     )
