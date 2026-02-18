@@ -3,6 +3,7 @@ from telegram.ext import ContextTypes
 from services.deezer_api import get_track, get_album
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph
+from handlers.escape_md import escape_md
 from telegram.constants import ParseMode
 
 
@@ -131,11 +132,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["last_artist_name"] = artist_name
 
     # Send a message with an inline button linking to the Telegraph page
-    button = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Click for Lyrics 🎵", url=telegraph_url)]]
-    )
+ #   button = InlineKeyboardMarkup(
+ #       [[InlineKeyboardButton("Click for Lyrics 🎵", url=telegraph_url)]]
+ #   )
+#
+ #   await query.edit_message_text(
+#        "✅ Telegraph created! Click the button below to open it:",
+ #       reply_markup=button
+#    )
 
     await query.edit_message_text(
-        "✅ Telegraph created! Click the button below to open it:",
-        reply_markup=button
+        f"✅ Telegraph created\n\n"
+        "You can now send a music file in this chat to attach the 'Lyrics' button to it.\n"
+        "After attaching, you'll also have the option to send it to channels you added the bot to.\n\n"
+        f'<a href="{telegraph_url}">Open Telegraph Page</a>',
+        parse_mode="HTML"
     )

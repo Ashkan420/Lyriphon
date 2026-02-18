@@ -1,15 +1,9 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from handlers.escape_md import escape_md
 import services.channel_store as store
 
-
-# escape special characters for MarkdownV2
-def escape_md(text: str):
-    escape_chars = r'\_*[]()~`>#+-=|{}.!'
-    for char in escape_chars:
-        text = text.replace(char, f"\\{char}")
-    return text
 
 
 async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
