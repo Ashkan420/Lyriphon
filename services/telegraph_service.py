@@ -6,7 +6,6 @@ telegraph = Telegraph(access_token=TELEGRAPH_ACCESS_TOKEN)
 
 def create_song_telegraph(
     author_name: str,
-    author_url: str,
     track: str,
     track_id: int,
     artist: str,
@@ -24,42 +23,31 @@ def create_song_telegraph(
     if not lyrics:
         lyrics = "Lyrics not found."
 
-    content = [
+    # Escape HTML special chars to prevent broken pages
+    lyrics = lyrics.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-        {
-            "tag": "img",
-            "attrs": {"src": album_cover_url}
-        },
+    # Split lyrics into paragraphs per line
+    html_lyrics = "".join([f"<p>{line}</p>" for line in lyrics.splitlines()])
 
-        {"tag": "p", "children": [
-            "🎧 Track: ",
-            {"tag": "a", "attrs": {"href": track_link}, "children": [track]}
-        ]},
+    html_content = f"""
+    <img src="{album_cover_url}">
+    <br>
 
-        {"tag": "p", "children": [
-            "👤 Artist: ",
-            {"tag": "a", "attrs": {"href": artist_link}, "children": [artist]}
-        ]},
+    <p>🎧 Track: <a href="{track_link}">{track}</a></p>
+    <p>👤 Artist: <a href="{artist_link}">{artist}</a></p>
+    <p>💽 Album: <a href="{album_link}">{album}</a></p>
+    <p>📅 Date: {release_date}</p>
 
-        {"tag": "p", "children": [
-            "💽 Album: ",
-            {"tag": "a", "attrs": {"href": album_link}, "children": [album]}
-        ]},
-
-        {"tag": "p", "children": [f"📅 Date: {release_date}"]},
-
-        {"tag": "hr"},
-
-        {"tag": "h3", "children": ["Lyrics"]},
-        {"tag": "pre", "children": [lyrics]}
-    ]
+    <hr>
+    <h3>Lyrics</h3>
+    {html_lyrics}
+    """
 
     response = telegraph.create_page(
         title=track,
         author_name=author_name,
-        author_url=author_url,
-        html_content=None,
-        content=content
+        author_url=CHANNEL_LINK,  # always your channel
+        html_content=html_content
     )
 
     return "https://telegra.ph/" + response["path"]

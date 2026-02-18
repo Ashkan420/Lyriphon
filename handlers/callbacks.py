@@ -55,7 +55,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     telegraph_url = create_song_telegraph(
         author_name=author_name,
-        author_url=author_url,
+        #author_url=author_url,
         track=track_name,
         track_id=track_id,
         artist=artist_name,
