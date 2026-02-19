@@ -36,6 +36,10 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
     )
 
+    # add invisible telegraph link to caption
+    hidden_link = f"[‎]({telegraph_url})"
+    caption = caption + "\n" + hidden_link
+
     # attach button to the audio in the chat
     await context.bot.copy_message(
         chat_id=update.effective_chat.id,
@@ -43,7 +47,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message_id=music_msg.message_id,
         caption=caption,
         parse_mode=ParseMode.MARKDOWN_V2,
-        reply_markup=button
+        reply_markup=button,
     )
 
     # store audio file_id for later sending to channel
