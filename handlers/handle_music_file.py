@@ -25,11 +25,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     track_name_md = escape_md(track_name)
     artist_name_md = escape_md(artist_name)
 
-    # Caption: monospace
-    #caption = f'`{track_name_md} — {artist_name_md}`'
 
-    # Caption: quote first, then monospace
-    caption = f'> `{track_name_md} — {artist_name_md}`'
 
     # create inline button
     button = InlineKeyboardMarkup(
@@ -38,7 +34,14 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # add invisible telegraph link to caption
     hidden_link = f"[‎]({telegraph_url})"
-    caption = caption + "\n" + hidden_link
+
+    # Caption: monospace
+    #caption = f'`{track_name_md} — {artist_name_md}`'
+
+    # Caption: quote first, then monospace, with hidden link
+    caption = f'>`{track_name_md} — {artist_name_md}`{hidden_link}'
+
+    #caption = caption + hidden_link
 
     # attach button to the audio in the chat
     await context.bot.copy_message(
