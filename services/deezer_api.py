@@ -4,7 +4,7 @@ DEEZEER_SEARCH_URL = "https://api.deezer.com/search"
 DEEZEER_TRACK_URL = "https://api.deezer.com/track/"
 DEEZEER_ALBUM_URL = "https://api.deezer.com/album/"
 
-def search_tracks(query: str, limit: int = 10):
+def search_tracks(query: str, limit: int = 25):
     r = requests.get(DEEZEER_SEARCH_URL, params={"q": query})
     data = r.json()
 
