@@ -1,3 +1,5 @@
+import re
+
 from telegraph import Telegraph
 from config import TELEGRAPH_ACCESS_TOKEN, CHANNEL_LINK, DEEZLOAD_BOT
 
@@ -24,10 +26,41 @@ def create_song_telegraph(
         lyrics = "Lyrics not found."
 
     # Escape HTML special chars to prevent broken pages
-    lyrics = lyrics.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    #lyrics = lyrics.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    # Split lyrics into paragraphs per line
-    html_lyrics = "".join([f"<p>{line}</p>" for line in lyrics.splitlines()])
+
+    import html
+
+    # Escape HTML
+    lyrics = html.escape(lyrics)
+
+    # Normalize newlines first (if coming as \n)
+    lyrics = lyrics.replace("\r\n", "\n").replace("\r", "\n")
+    lyrics = lyrics.replace("\n", "<br>")
+
+    # Normalize 2+ breaks into exactly two
+    lyrics = re.sub(r'(<br>\s*){2,}', '<br><br>', lyrics)
+
+    segments = lyrics.split("<br><br>")
+
+    html_parts = []
+
+    for i, segment in enumerate(segments):
+        segment = segment.strip()
+        if not segment:
+            continue
+
+        lines = [line.strip() for line in segment.split("<br>") if line.strip()]
+
+        for line in lines:
+            html_parts.append(f"<p>{line}</p>")
+
+        # Add double break between segments (except last)
+        if i < len(segments) - 1:
+            html_parts.append("<p>&#8203;</p>")
+
+    html_lyrics = "\n".join(html_parts)
+
 
     html_content = f"""
     <img src="{album_cover_url}">
@@ -42,6 +75,13 @@ def create_song_telegraph(
     <h3>Lyrics</h3>
     {html_lyrics}
     """
+
+    print("\n" + "="*40)
+    print("TELEGRAPH HTML CONTENT:")
+    print("="*40)
+    print(html_content)
+    print("="*40 + "\n")
+
 
     response = telegraph.create_page(
         title=track,
