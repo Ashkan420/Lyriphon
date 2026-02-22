@@ -2,7 +2,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from config import BOT_TOKEN
 from handlers.start import start_command
 from handlers.song_search import song_search, handle_search_page_callback
-from handlers.callbacks import handle_callback
+from handlers.callbacks import handle_callback, handle_edit_lyrics_callback, handle_new_lyrics_message
 from handlers.handle_music_file import handle_music_file
 from handlers.callbacks import send_to_channel_callback
 from telegram.ext import ChatMemberHandler
@@ -17,6 +17,8 @@ def main():
     app.add_handler(CommandHandler("song", song_search))
     app.add_handler(CallbackQueryHandler(handle_search_page_callback, pattern="^search_page_"))
     app.add_handler(CallbackQueryHandler(handle_callback, pattern="track_.*"))
+    app.add_handler(CallbackQueryHandler(handle_edit_lyrics_callback, pattern="^edit_lyrics$"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_new_lyrics_message))
     app.add_handler(CallbackQueryHandler(send_to_channel_callback, pattern="^send_channel_"))
     app.add_handler(MessageHandler(filters.AUDIO, handle_music_file))
 

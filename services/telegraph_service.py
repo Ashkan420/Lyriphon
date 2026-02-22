@@ -17,7 +17,9 @@ def create_song_telegraph(
     release_date: str,
     lyrics: str
 ):
-
+    """
+    Create a Telegraph page for a song and return the URL and path.
+    """
     track_link = f"{DEEZLOAD_BOT}deezerttrack{track_id}"
     artist_link = f"{DEEZLOAD_BOT}deezertartist{artist_id}"
     album_link = f"{DEEZLOAD_BOT}deezertalbum{album_id}"
@@ -45,7 +47,52 @@ def create_song_telegraph(
         html_content=html_content
     )
 
-    return "https://telegra.ph/" + response["path"]
+    url = "https://telegra.ph/" + response["path"]
+    path = response["path"]
+    
+    last_data = {
+        "author_name": author_name,
+        "track": track,
+        "track_link": track_link,
+        "artist": artist,
+        "artist_link": artist_link,
+        "album": album,
+        "album_link": album_link,
+        "album_cover_url": album_cover_url,
+        "release_date": release_date,
+        "path": path
+    }
+
+    return url, path, last_data
+
+
+def edit_song_lyrics(path: str, new_lyrics: str, last_data: dict):
+
+    """
+    Edit an existing Telegraph page using the stored last_data.
+    Only the lyrics are updated; all other info remains the same.
+    """
+    formatted_lyrics = format_lyrics_for_telegraph(new_lyrics)
+
+    html_content = _build_html_page(
+        track=last_data["track"],
+        artist=last_data["artist"],
+        album=last_data["album"],
+        release_date=last_data["release_date"],
+        album_cover_url=last_data["album_cover_url"],
+        track_link=last_data["track_link"],
+        artist_link=last_data["artist_link"],
+        album_link=last_data["album_link"],
+        formatted_lyrics=formatted_lyrics
+    )
+
+    telegraph.edit_page(
+        path=path,
+        title=last_data["track"],
+        html_content=html_content,
+        author_name=last_data["author_name"],
+        author_url=CHANNEL_LINK
+    )
 
 
 def _build_html_page(

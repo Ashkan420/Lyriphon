@@ -1,9 +1,46 @@
+from multiprocessing import context
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from services.deezer_api import get_track, get_album
 from services.lrclib_api import get_lyrics
-from services.telegraph_service import create_song_telegraph
+from services.telegraph_service import create_song_telegraph, edit_song_lyrics
 from telegram.constants import ParseMode
+
+async def handle_edit_lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # Ask admin for new lyrics
+    await query.message.reply_text("✏️ Please send the new lyrics to update the page:")
+
+    # Save state that next message from this user is new lyrics
+    context.user_data["awaiting_lyrics_edit"] = True
+
+
+# Then in your message handler where you receive messages:
+async def handle_new_lyrics_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("awaiting_lyrics_edit"):
+        return  # ignore if not expecting lyrics
+
+    new_lyrics = update.message.text
+
+    last_data = context.user_data.get("last_telegraph_data")
+    if not last_data:
+        await update.message.reply_text("❌ Cannot find the page to edit.")
+        return
+
+    # Edit the page in place
+    edit_song_lyrics(
+        path=last_data["path"],
+        new_lyrics=new_lyrics,
+        last_data=last_data
+    )
+
+    await update.message.reply_text(f"✅ Lyrics updated successfully!")
+
+    context.user_data["awaiting_lyrics_edit"] = False
+
 
 
 async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,7 +148,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text("⏳ Creating Telegraph page...")
 
-    telegraph_url = create_song_telegraph(
+    telegraph_url, telegraph_path, last_data = create_song_telegraph(
         author_name=author_name,
         #author_url=author_url,
         track=track_name,
@@ -127,13 +164,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # store it for this user
     context.user_data["last_telegraph"] = telegraph_url
+    context.user_data["last_telegraph_path"] = telegraph_path
     context.user_data["last_track_name"] = track_name
     context.user_data["last_artist_name"] = artist_name
+    context.user_data["last_telegraph_data"] = last_data
+
+    
+
+    # Build buttons
+    buttons = []
+
+    buttons.append([InlineKeyboardButton("✏️ Edit Lyrics", callback_data="edit_lyrics")])
+
+    reply_markup = InlineKeyboardMarkup(buttons)
 
     await query.edit_message_text(
         f"✅ Telegraph created\n\n"
         "You can now send a music file in this chat to attach the 'Lyrics' button to it.\n"
         "After attaching, you'll also have the option to send it to channels you added the bot to.\n\n"
         f'<a href="{telegraph_url}">Open Telegraph Page</a>',
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=reply_markup
     )
