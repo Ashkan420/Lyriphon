@@ -11,21 +11,21 @@ async def handle_edit_lyrics_callback(update: Update, context: ContextTypes.DEFA
     query = update.callback_query
     await query.answer()
 
-    # Ask admin for new lyrics
-    await query.message.reply_text("✏️ Please send the new lyrics to update the page:")
+    # Ask admin for new lyrics and store the message ID
+    msg = await query.message.reply_text("✏️ Please send the new lyrics to update the page:")
+    context.user_data["lyrics_prompt_message_id"] = msg.message_id
 
     # Save state that next message from this user is new lyrics
     context.user_data["awaiting_lyrics_edit"] = True
 
 
-# Then in your message handler where you receive messages:
 async def handle_new_lyrics_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_lyrics_edit"):
-        return  # ignore if not expecting lyrics
+        return
 
     new_lyrics = update.message.text
-
     last_data = context.user_data.get("last_telegraph_data")
+
     if not last_data:
         await update.message.reply_text("❌ Cannot find the page to edit.")
         return
@@ -37,9 +37,29 @@ async def handle_new_lyrics_message(update: Update, context: ContextTypes.DEFAUL
         last_data=last_data
     )
 
+    # Delete the user's lyrics message
+    try:
+        await update.message.delete()
+    except:
+        pass
+
+    # Delete the prompt message that asked the user to send lyrics
+    prompt_message_id = context.user_data.get("lyrics_prompt_message_id")
+    if prompt_message_id:
+        try:
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=prompt_message_id
+            )
+        except:
+            pass
+
     await update.message.reply_text(f"✅ Lyrics updated successfully!")
 
+    # Reset state
     context.user_data["awaiting_lyrics_edit"] = False
+    context.user_data["lyrics_prompt_message_id"] = None
+
 
 
 
