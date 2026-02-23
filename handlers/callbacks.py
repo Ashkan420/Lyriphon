@@ -1,65 +1,140 @@
-from multiprocessing import context
-
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from services.deezer_api import get_track, get_album
 from services.lrclib_api import get_lyrics
-from services.telegraph_service import create_song_telegraph, edit_song_lyrics
+from services.telegraph_service import create_song_telegraph, edit_song_page
 from telegram.constants import ParseMode
+from url_validation import is_valid_url
 
-async def handle_edit_lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    # Ask admin for new lyrics and store the message ID
-    msg = await query.message.reply_text("✏️ Please send the new lyrics to update the page:")
-    context.user_data["lyrics_prompt_message_id"] = msg.message_id
+    field = query.data.replace("edit_field_", "")
+    context.user_data["editing_field"] = field
 
-    # Save state that next message from this user is new lyrics
-    context.user_data["awaiting_lyrics_edit"] = True
+    url_fields = ["track_link", "artist_link", "album_link", "cover"]
 
+    if field in url_fields:
+        text = (
+            f"✏️ Send new URL for: {field}\n\n"
+            "• Must start with http:// or https://\n"
+            "• Type 'none' to remove it\n"
+            "• Send /cancel to stop editing"
+        )
+    else:
+        text = (
+            f"✏️ Send new value for: {field}\n\n"
+            "Send /cancel to stop editing."
+        )
 
-async def handle_new_lyrics_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("awaiting_lyrics_edit"):
+    msg = await query.message.reply_text(text)
+    context.user_data["edit_prompt_id"] = msg.message_id
+    
+
+async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text.startswith("/"):
         return
 
-    new_lyrics = update.message.text
+    field = context.user_data.get("editing_field")
+    if not field:
+        return
+
+    new_value = update.message.text
     last_data = context.user_data.get("last_telegraph_data")
 
     if not last_data:
-        await update.message.reply_text("❌ Cannot find the page to edit.")
+        await update.message.reply_text("❌ No Telegraph page loaded.")
         return
 
-    # Edit the page in place
-    edit_song_lyrics(
-        path=last_data["path"],
-        new_lyrics=new_lyrics,
-        last_data=last_data
-    )
+    # Update data
+    if field == "lyrics":
+        context.user_data["current_lyrics"] = new_value
 
-    # Delete the user's lyrics message
+    elif field == "track":
+        last_data["track"] = new_value  # also updates title automatically
+
+    elif field == "track_link":
+        last_data["track_link"] = new_value
+
+    elif field == "artist":
+        last_data["artist"] = new_value
+
+    elif field == "artist_link":
+        last_data["artist_link"] = new_value
+
+    elif field == "album":
+        last_data["album"] = new_value
+
+    elif field == "album_link":
+        last_data["album_link"] = new_value
+
+    elif field == "cover":
+        last_data["album_cover_url"] = new_value
+
+    elif field == "date":
+        last_data["release_date"] = new_value
+
+    elif field == "author":
+        last_data["author_name"] = new_value
+
+
+    # Clean chat
     try:
         await update.message.delete()
     except:
         pass
 
-    # Delete the prompt message that asked the user to send lyrics
-    prompt_message_id = context.user_data.get("lyrics_prompt_message_id")
-    if prompt_message_id:
+    prompt_id = context.user_data.get("edit_prompt_id")
+    if prompt_id:
+        try:
+            await context.bot.delete_message(update.effective_chat.id, prompt_id)
+        except:
+            pass
+
+    # Rebuild page
+    lyrics = context.user_data.get("current_lyrics", "")
+    edit_song_page(last_data, lyrics)
+
+    # Reset editing state
+    context.user_data["editing_field"] = None
+
+    await update.effective_chat.send_message(
+        "✅ Updated successfully!",
+    )
+
+
+
+
+async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("editing_field"):
+        return
+
+    # Delete the user's /cancel message
+    try:
+        await update.message.delete()
+    except:
+        pass
+
+    # Delete the prompt message that asked for input
+    prompt_id = context.user_data.get("edit_prompt_id")
+    if prompt_id:
         try:
             await context.bot.delete_message(
                 chat_id=update.effective_chat.id,
-                message_id=prompt_message_id
+                message_id=prompt_id
             )
         except:
             pass
 
-    await update.message.reply_text(f"✅ Lyrics updated successfully!")
+    # Reset editing state
+    context.user_data["editing_field"] = None
+    context.user_data["edit_prompt_id"] = None
 
-    # Reset state
-    context.user_data["awaiting_lyrics_edit"] = False
-    context.user_data["lyrics_prompt_message_id"] = None
-
+    # Send clean confirmation + show menu again
+    await update.effective_chat.send_message(
+        "❌ Edit cancelled.",
+    )
 
 
 
@@ -118,6 +193,34 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
     context.user_data["pending_caption"] = None
     context.user_data["pending_telegraph_url"] = None
     context.user_data["send_channel_prompt_id"] = None
+
+
+# Build buttons
+def build_edit_menu():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✏️ Lyrics", callback_data="edit_field_lyrics"),
+            InlineKeyboardButton("👑 Author", callback_data="edit_field_author"),
+        ],
+        [
+            InlineKeyboardButton("📝 Track", callback_data="edit_field_track"),
+            InlineKeyboardButton("🔗 Track Link", callback_data="edit_field_track_link"),
+        ],
+        [
+            InlineKeyboardButton("👤 Artist", callback_data="edit_field_artist"),
+            InlineKeyboardButton("🔗 Artist Link", callback_data="edit_field_artist_link"),
+        ],
+        [
+            InlineKeyboardButton("💽 Album", callback_data="edit_field_album"),
+            InlineKeyboardButton("🔗 Album Link", callback_data="edit_field_album_link"),
+        ],
+        [
+            InlineKeyboardButton("🖼 Cover URL", callback_data="edit_field_cover"),
+            InlineKeyboardButton("📅 Release Date", callback_data="edit_field_date"),
+        ],
+    ])
+
+
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -183,6 +286,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # store it for this user
+    context.user_data["current_lyrics"] = lyrics
     context.user_data["last_telegraph"] = telegraph_url
     context.user_data["last_telegraph_path"] = telegraph_path
     context.user_data["last_track_name"] = track_name
@@ -191,12 +295,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     
 
-    # Build buttons
-    buttons = []
-
-    buttons.append([InlineKeyboardButton("✏️ Edit Lyrics", callback_data="edit_lyrics")])
-
-    reply_markup = InlineKeyboardMarkup(buttons)
+    reply_markup = build_edit_menu()
 
     await query.edit_message_text(
         f"✅ Telegraph created\n\n"

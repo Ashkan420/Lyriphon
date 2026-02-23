@@ -66,13 +66,9 @@ def create_song_telegraph(
     return url, path, last_data
 
 
-def edit_song_lyrics(path: str, new_lyrics: str, last_data: dict):
+def edit_song_page(last_data: dict, lyrics: str):
 
-    """
-    Edit an existing Telegraph page using the stored last_data.
-    Only the lyrics are updated; all other info remains the same.
-    """
-    formatted_lyrics = format_lyrics_for_telegraph(new_lyrics)
+    formatted_lyrics = format_lyrics_for_telegraph(lyrics)
 
     html_content = _build_html_page(
         track=last_data["track"],
@@ -87,7 +83,7 @@ def edit_song_lyrics(path: str, new_lyrics: str, last_data: dict):
     )
 
     telegraph.edit_page(
-        path=path,
+        path=last_data["path"],
         title=last_data["track"],
         html_content=html_content,
         author_name=last_data["author_name"],
