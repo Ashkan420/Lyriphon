@@ -4,11 +4,21 @@ from services.deezer_api import get_track, get_album
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph, edit_song_page
 from telegram.constants import ParseMode
-from url_validation import is_valid_url
+from services.url_validation import is_valid_url, _is_valid_image_url
+import asyncio
+
+
 
 async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+
+    # Per-user session lock
+    if context.user_data.get("editing_session_active"):
+        await query.answer("❌ You already have an active edit session", show_alert=True)
+        return
+    context.user_data["editing_session_active"] = True
+
+    await query.answer()  # answer immediately to remove "loading..." popup
 
     field = query.data.replace("edit_field_", "")
     context.user_data["editing_field"] = field
@@ -30,61 +40,29 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
 
     msg = await query.message.reply_text(text)
     context.user_data["edit_prompt_id"] = msg.message_id
-    
+
+
+
 
 async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text.startswith("/"):
+    # Check if user is actively editing
+    if not context.user_data.get("editing_session_active"):
         return
 
     field = context.user_data.get("editing_field")
     if not field:
         return
 
-    new_value = update.message.text
+    new_value = update.message.text.strip()
     last_data = context.user_data.get("last_telegraph_data")
-
     if not last_data:
-        await update.message.reply_text("❌ No Telegraph page loaded.")
         return
 
-    # Update data
-    if field == "lyrics":
-        context.user_data["current_lyrics"] = new_value
-
-    elif field == "track":
-        last_data["track"] = new_value  # also updates title automatically
-
-    elif field == "track_link":
-        last_data["track_link"] = new_value
-
-    elif field == "artist":
-        last_data["artist"] = new_value
-
-    elif field == "artist_link":
-        last_data["artist_link"] = new_value
-
-    elif field == "album":
-        last_data["album"] = new_value
-
-    elif field == "album_link":
-        last_data["album_link"] = new_value
-
-    elif field == "cover":
-        last_data["album_cover_url"] = new_value
-
-    elif field == "date":
-        last_data["release_date"] = new_value
-
-    elif field == "author":
-        last_data["author_name"] = new_value
-
-
-    # Clean chat
+    # Delete user's message and prompt
     try:
         await update.message.delete()
     except:
         pass
-
     prompt_id = context.user_data.get("edit_prompt_id")
     if prompt_id:
         try:
@@ -92,49 +70,132 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
         except:
             pass
 
-    # Rebuild page
+    url_fields = ["track_link", "artist_link", "album_link", "cover"]
+
+    # Handle URL fields
+    if field in url_fields:
+        if new_value.lower() == "none":
+            if field == "cover":
+                last_data["album_cover_url"] = ""
+            else:
+                last_data[field] = ""
+        else:
+            if field == "cover":
+                if not _is_valid_image_url(new_value):
+                    msg = await update.effective_chat.send_message(
+                        "❌ Invalid image URL (.jpg/.png/.webp required)"
+                    )
+                    await asyncio.sleep(6)
+                    try:
+                        await msg.delete()
+                    except:
+                        pass
+                    context.user_data["editing_session_active"] = False
+                    context.user_data["editing_field"] = None
+                    return
+                last_data["album_cover_url"] = new_value
+            else:
+                if not is_valid_url(new_value):
+                    msg = await update.effective_chat.send_message("❌ Invalid URL format")
+                    await asyncio.sleep(6)
+                    try:
+                        await msg.delete()
+                    except:
+                        pass
+                    context.user_data["editing_session_active"] = False
+                    context.user_data["editing_field"] = None
+                    return
+                last_data[field] = new_value
+
+    # Handle non-URL fields
+    else:
+        if field == "lyrics":
+            context.user_data["current_lyrics"] = new_value
+        elif field == "track":
+            last_data["track"] = new_value
+        elif field == "artist":
+            last_data["artist"] = new_value
+        elif field == "album":
+            last_data["album"] = new_value
+        elif field == "date":
+            last_data["release_date"] = new_value
+        elif field == "author":
+            last_data["author_name"] = new_value
+
+    # Rebuild Telegraph page
     lyrics = context.user_data.get("current_lyrics", "")
     edit_song_page(last_data, lyrics)
 
-    # Reset editing state
+    # Reset session
+    context.user_data["editing_session_active"] = False
     context.user_data["editing_field"] = None
+    context.user_data["edit_prompt_id"] = None
 
-    await update.effective_chat.send_message(
-        "✅ Updated successfully!",
-    )
-
-
+    msg = await update.effective_chat.send_message("✅ Updated")
+    await asyncio.sleep(6)
+    try:
+        await msg.delete()
+    except:
+        pass
 
 
 async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("editing_field"):
+    if not context.user_data.get("editing_session_active"):
         return
 
-    # Delete the user's /cancel message
+    # Delete /cancel message
     try:
         await update.message.delete()
     except:
         pass
 
-    # Delete the prompt message that asked for input
+    # Delete prompt
     prompt_id = context.user_data.get("edit_prompt_id")
     if prompt_id:
         try:
-            await context.bot.delete_message(
-                chat_id=update.effective_chat.id,
-                message_id=prompt_id
-            )
+            await context.bot.delete_message(update.effective_chat.id, prompt_id)
         except:
             pass
 
-    # Reset editing state
+    # Reset session
+    context.user_data["editing_session_active"] = False
     context.user_data["editing_field"] = None
     context.user_data["edit_prompt_id"] = None
 
-    # Send clean confirmation + show menu again
-    await update.effective_chat.send_message(
-        "❌ Edit cancelled.",
-    )
+    # ✅ Temporary popup confirmation
+    msg = await update.effective_chat.send_message("❌ Edit cancelled")
+    await asyncio.sleep(6)
+    try:
+        await msg.delete()
+    except:
+        pass
+
+
+
+# Build buttons
+def build_edit_menu():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✏️ Lyrics", callback_data="edit_field_lyrics"),
+            InlineKeyboardButton("👑 Author", callback_data="edit_field_author"),
+        ],
+        [
+            InlineKeyboardButton("📝 Track", callback_data="edit_field_track"),
+            InlineKeyboardButton("🔗 Track Link", callback_data="edit_field_track_link"),
+        ],
+        [
+            InlineKeyboardButton("👤 Artist", callback_data="edit_field_artist"),
+            InlineKeyboardButton("🔗 Artist Link", callback_data="edit_field_artist_link"),
+        ],
+        [
+            InlineKeyboardButton("💽 Album", callback_data="edit_field_album"),
+            InlineKeyboardButton("🔗 Album Link", callback_data="edit_field_album_link"),
+        ],
+        [
+            InlineKeyboardButton("📅 Release Date", callback_data="edit_field_date"),
+            InlineKeyboardButton("🖼 Cover URL", callback_data="edit_field_cover"),
+        ],
+    ])
 
 
 
@@ -193,33 +254,6 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
     context.user_data["pending_caption"] = None
     context.user_data["pending_telegraph_url"] = None
     context.user_data["send_channel_prompt_id"] = None
-
-
-# Build buttons
-def build_edit_menu():
-    return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✏️ Lyrics", callback_data="edit_field_lyrics"),
-            InlineKeyboardButton("👑 Author", callback_data="edit_field_author"),
-        ],
-        [
-            InlineKeyboardButton("📝 Track", callback_data="edit_field_track"),
-            InlineKeyboardButton("🔗 Track Link", callback_data="edit_field_track_link"),
-        ],
-        [
-            InlineKeyboardButton("👤 Artist", callback_data="edit_field_artist"),
-            InlineKeyboardButton("🔗 Artist Link", callback_data="edit_field_artist_link"),
-        ],
-        [
-            InlineKeyboardButton("💽 Album", callback_data="edit_field_album"),
-            InlineKeyboardButton("🔗 Album Link", callback_data="edit_field_album_link"),
-        ],
-        [
-            InlineKeyboardButton("🖼 Cover URL", callback_data="edit_field_cover"),
-            InlineKeyboardButton("📅 Release Date", callback_data="edit_field_date"),
-        ],
-    ])
-
 
 
 

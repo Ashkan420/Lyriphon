@@ -1,5 +1,6 @@
 from telegraph import Telegraph
 from config import TELEGRAPH_ACCESS_TOKEN, CHANNEL_LINK, DEEZLOAD_BOT
+from services.url_validation import _is_valid_image_url, _safe_link
 from services.lyrics_formatter import format_lyrics_for_telegraph
 
 telegraph = Telegraph(access_token=TELEGRAPH_ACCESS_TOKEN)
@@ -102,14 +103,29 @@ def _build_html_page(
     album_link,
     formatted_lyrics
 ):
-    return f"""
-<img src="{album_cover_url}">
-<br>
+    # Cover image (only if valid image URL)
+    cover_html = ""
+    if _is_valid_image_url(album_cover_url):
+        cover_html = f'<img src="{album_cover_url}"><br>'
 
-<p><strong>🎧 Track:</strong> <a href="{track_link}">{track}</a></p>
-<p><strong>👤 Artist:</strong> <a href="{artist_link}">{artist}</a></p>
-<p><strong>💽 Album:</strong> <a href="{album_link}">{album}</a></p>
-<p><strong>📅 Date:</strong> {release_date}</p>
+    # Safe links (plain text if URL removed)
+    track_html = _safe_link(track, track_link)
+    artist_html = _safe_link(artist, artist_link)
+    album_html = _safe_link(album, album_link)
+
+    # Remove empty metadata lines
+    track_section = f'<p><strong>🎧 Track:</strong> {track_html}</p>' if track else ""
+    artist_section = f'<p><strong>👤 Artist:</strong> {artist_html}</p>' if artist else ""
+    album_section = f'<p><strong>💽 Album:</strong> {album_html}</p>' if album else ""
+    date_section = f'<p><strong>📅 Date:</strong> {release_date}</p>' if release_date else ""
+
+    return f"""
+{cover_html}
+
+{track_section}
+{artist_section}
+{album_section}
+{date_section}
 
 <hr>
 <h3>Lyrics</h3>
