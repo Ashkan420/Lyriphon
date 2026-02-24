@@ -14,17 +14,18 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     music_msg = update.message
 
-    # check if user has a recent telegraph
-    track_name = context.user_data.get("last_track_name", "Unknown Track")
-    artist_name = context.user_data.get("last_artist_name", "Unknown Artist")
     telegraph_url = context.user_data.get("last_telegraph")
+    last_data = context.user_data.get("last_telegraph_data")
 
-    if not telegraph_url:
+    if not telegraph_url or not last_data:
         return  # nothing to attach
+
+    # Always use updated values
+    track_name = last_data.get("track", "Unknown Track")
+    artist_name = last_data.get("artist", "Unknown Artist")
 
     track_name_md = escape_md(track_name)
     artist_name_md = escape_md(artist_name)
-
 
 
     # create inline button
@@ -74,5 +75,3 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # clear telegraph so next file doesn't reuse old Telegraph
     context.user_data["last_telegraph"] = None
-    context.user_data["last_track_name"] = None
-    context.user_data["last_artist_name"] = None

@@ -4,7 +4,7 @@ from services.deezer_api import get_track, get_album
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph, edit_song_page
 from telegram.constants import ParseMode
-from services.url_validation import is_valid_url, _is_valid_image_url
+from services.url_validation import is_valid_url
 import asyncio
 
 
@@ -33,10 +33,24 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
             "• Send /cancel to stop editing"
         )
     else:
-        text = (
-            f"✏️ Send new value for: {field}\n\n"
-            "Send /cancel to stop editing."
-        )
+        if field == "lyrics":
+            text = (
+                "✏️ Send the new lyrics.\n\n"
+                "• You can send multiple messages\n"
+                "• Send /done when finished\n"
+                "• Send /cancel to stop editing"
+            )
+
+            # Prepare buffer
+            context.user_data["lyrics_buffer"] = []
+            context.user_data["lyrics_message_ids"] = []
+
+        else:
+            text = (
+                f"✏️ Send new value for: {field}\n\n"
+                "Send /cancel to stop editing."
+            )
+
 
     msg = await query.message.reply_text(text)
     context.user_data["edit_prompt_id"] = msg.message_id
@@ -45,13 +59,31 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
 
 
 async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check if user is actively editing
+
+    # Must be in active edit session
     if not context.user_data.get("editing_session_active"):
         return
 
     field = context.user_data.get("editing_field")
     if not field:
         return
+
+    # LYRICS COLLECTION MODE
+    if field == "lyrics":
+
+        text = update.message.text
+
+        # Ignore commands except /done (handled elsewhere)
+        if text.startswith("/"):
+            return
+
+        context.user_data.setdefault("lyrics_buffer", []).append(text)
+        context.user_data.setdefault("lyrics_message_ids", []).append(
+            update.message.message_id
+        )
+
+        return  # Wait for /done
+
 
     new_value = update.message.text.strip()
     last_data = context.user_data.get("last_telegraph_data")
@@ -80,32 +112,20 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
             else:
                 last_data[field] = ""
         else:
+            if not is_valid_url(new_value):
+                msg = await update.effective_chat.send_message("❌ Invalid URL format")
+                await asyncio.sleep(5)
+                try:
+                    await msg.delete()
+                except:
+                    pass
+                return
+
             if field == "cover":
-                if not _is_valid_image_url(new_value):
-                    msg = await update.effective_chat.send_message(
-                        "❌ Invalid image URL (.jpg/.png/.webp required)"
-                    )
-                    await asyncio.sleep(6)
-                    try:
-                        await msg.delete()
-                    except:
-                        pass
-                    context.user_data["editing_session_active"] = False
-                    context.user_data["editing_field"] = None
-                    return
                 last_data["album_cover_url"] = new_value
             else:
-                if not is_valid_url(new_value):
-                    msg = await update.effective_chat.send_message("❌ Invalid URL format")
-                    await asyncio.sleep(6)
-                    try:
-                        await msg.delete()
-                    except:
-                        pass
-                    context.user_data["editing_session_active"] = False
-                    context.user_data["editing_field"] = None
-                    return
                 last_data[field] = new_value
+
 
     # Handle non-URL fields
     else:
@@ -132,7 +152,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data["edit_prompt_id"] = None
 
     msg = await update.effective_chat.send_message("✅ Updated")
-    await asyncio.sleep(6)
+    await asyncio.sleep(5)
     try:
         await msg.delete()
     except:
@@ -140,6 +160,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not context.user_data.get("editing_session_active"):
         return
 
@@ -157,19 +178,88 @@ async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         except:
             pass
 
+    # If we were editing lyrics → delete all collected lyric messages
+    if context.user_data.get("editing_field") == "lyrics":
+        for msg_id in context.user_data.get("lyrics_message_ids", []):
+            try:
+                await context.bot.delete_message(update.effective_chat.id, msg_id)
+            except:
+                pass
+
+        # Clear buffers
+        context.user_data["lyrics_buffer"] = []
+        context.user_data["lyrics_message_ids"] = []
+
     # Reset session
     context.user_data["editing_session_active"] = False
     context.user_data["editing_field"] = None
     context.user_data["edit_prompt_id"] = None
 
-    # ✅ Temporary popup confirmation
+    # Temporary confirmation
     msg = await update.effective_chat.send_message("❌ Edit cancelled")
-    await asyncio.sleep(6)
+    await asyncio.sleep(5)
     try:
         await msg.delete()
     except:
         pass
 
+
+async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not context.user_data.get("editing_session_active"):
+        return
+
+    if context.user_data.get("editing_field") != "lyrics":
+        return
+
+    # Delete /done message
+    try:
+        await update.message.delete()
+    except:
+        pass
+
+    last_data = context.user_data.get("last_telegraph_data")
+    if not last_data:
+        return
+
+    lyrics_parts = context.user_data.get("lyrics_buffer", [])
+    if not lyrics_parts:
+        return
+
+    full_lyrics = "\n".join(lyrics_parts)
+    context.user_data["current_lyrics"] = full_lyrics
+
+    # Delete all lyric messages
+    for msg_id in context.user_data.get("lyrics_message_ids", []):
+        try:
+            await context.bot.delete_message(update.effective_chat.id, msg_id)
+        except:
+            pass
+
+    # Delete prompt
+    prompt_id = context.user_data.get("edit_prompt_id")
+    if prompt_id:
+        try:
+            await context.bot.delete_message(update.effective_chat.id, prompt_id)
+        except:
+            pass
+
+    # Update Telegraph
+    edit_song_page(last_data, full_lyrics)
+
+    # Reset session
+    context.user_data["editing_session_active"] = False
+    context.user_data["editing_field"] = None
+    context.user_data["edit_prompt_id"] = None
+    context.user_data["lyrics_buffer"] = []
+    context.user_data["lyrics_message_ids"] = []
+
+    msg = await update.effective_chat.send_message("✅ Lyrics Updated")
+    await asyncio.sleep(4)
+    try:
+        await msg.delete()
+    except:
+        pass
 
 
 # Build buttons

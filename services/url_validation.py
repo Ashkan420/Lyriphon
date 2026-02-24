@@ -1,12 +1,12 @@
 import re
+from urllib.parse import urlparse
 
 def is_valid_url(url: str) -> bool:
-    pattern = re.compile(
-        r'^(https?:\/\/)'          # http:// or https://
-        r'([\w\-]+\.)+[\w\-]+'     # domain
-        r'([\/\w\-\.\?\=\&\#]*)?$' # path
-    )
-    return re.match(pattern, url) is not None
+    try:
+        result = urlparse(url)
+        return result.scheme in ("http", "https") and bool(result.netloc)
+    except:
+        return False
 
 def _is_valid_image_url(url: str) -> bool:
     """
