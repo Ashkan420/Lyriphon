@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from handlers.escape_md import escape_md
-import services.channel_store as store
+from db import get_user_channels
 
 
 
@@ -61,7 +61,8 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["pending_telegraph_url"] = telegraph_url
 
     # Instead of CHANNEL_ID
-    user_channels = store.get_user_channels(update.effective_user.id)
+    user_channels = await get_user_channels(update.effective_user.id)
+    # Filter out channels that no longer exist in the DB (optional sanity check)
     if user_channels:
         buttons = [
             [InlineKeyboardButton(title, callback_data=f"send_channel_{chat_id}")]
