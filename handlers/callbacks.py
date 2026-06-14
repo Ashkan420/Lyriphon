@@ -536,8 +536,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💽 {album_name}\n"
         f"📅 {release_date}"
         f"</blockquote>\n\n"
-        f"Send a <i>music file</i> to attach the <b>Lyrics</b> button to it.\n\n"
-        f"👇 <b>Edit options below</b> — or tap to open the page:\n"
+        f"Send a music file to attach the Lyrics button to it.\n\n"
+        f"👇 Edit options below — or tap to open the page:\n"
         f'<a href="{telegraph_url}">📖 Open Telegraph Page</a>',
         parse_mode="HTML",
         reply_markup=reply_markup
