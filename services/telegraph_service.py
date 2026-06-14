@@ -2,6 +2,8 @@ from telegraph import Telegraph
 from config import TELEGRAPH_ACCESS_TOKEN, CHANNEL_LINK, DEEZLOAD_BOT
 from services.url_validation import _is_valid_image_url, _safe_link
 from services.lyrics_formatter import format_lyrics_for_telegraph
+import time
+import random
 
 telegraph = Telegraph(access_token=TELEGRAPH_ACCESS_TOKEN)
 
@@ -16,7 +18,9 @@ def create_song_telegraph(
     album_id: int,
     album_cover_url: str,
     release_date: str,
-    lyrics: str
+    lyrics: str,
+    retries: int = 2,
+    delay: float = 2.0
 ):
     """
     Create a Telegraph page for a song and return the URL and path.
@@ -39,14 +43,22 @@ def create_song_telegraph(
         formatted_lyrics
     )
 
-    #_debug_print(html_content)
-
-    response = telegraph.create_page(
-        title=track,
-        author_name=author_name,
-        author_url=CHANNEL_LINK,
-        html_content=html_content
-    )
+    attempt = 0
+    while attempt <= retries:
+        try:
+            response = telegraph.create_page(
+                title=track,
+                author_name=author_name,
+                author_url=CHANNEL_LINK,
+                html_content=html_content
+            )
+            break
+        except Exception:
+            attempt += 1
+            if attempt <= retries:
+                time.sleep(delay * (2 ** attempt) + random.random())
+            else:
+                raise
 
     url = "https://telegra.ph/" + response["path"]
     path = response["path"]
@@ -67,7 +79,7 @@ def create_song_telegraph(
     return url, path, last_data
 
 
-def edit_song_page(last_data: dict, lyrics: str):
+def edit_song_page(last_data: dict, lyrics: str, retries: int = 2, delay: float = 2.0):
 
     formatted_lyrics = format_lyrics_for_telegraph(lyrics)
 
@@ -83,13 +95,23 @@ def edit_song_page(last_data: dict, lyrics: str):
         formatted_lyrics=formatted_lyrics
     )
 
-    telegraph.edit_page(
-        path=last_data["path"],
-        title=last_data["track"],
-        html_content=html_content,
-        author_name=last_data["author_name"],
-        author_url=CHANNEL_LINK
-    )
+    attempt = 0
+    while attempt <= retries:
+        try:
+            telegraph.edit_page(
+                path=last_data["path"],
+                title=last_data["track"],
+                html_content=html_content,
+                author_name=last_data["author_name"],
+                author_url=CHANNEL_LINK
+            )
+            break
+        except Exception:
+            attempt += 1
+            if attempt <= retries:
+                time.sleep(delay * (2 ** attempt) + random.random())
+            else:
+                raise
 
 
 def _build_html_page(
