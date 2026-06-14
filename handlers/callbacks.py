@@ -25,21 +25,27 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
 
     url_fields = ["track_link", "artist_link", "album_link", "cover"]
 
+    cancel_button = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_edit")]]
+    done_cancel_buttons = [
+        [InlineKeyboardButton("✅ Done", callback_data="done_lyrics")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_edit")],
+    ]
+
     if field in url_fields:
         text = (
             f"✏️ Send new URL for: {field}\n\n"
             "• Must start with http:// or https://\n"
-            "• Type 'none' to remove it\n"
-            "• Send /cancel to stop editing"
+            "• Type 'none' to remove it"
         )
+        markup = InlineKeyboardMarkup(cancel_button)
     else:
         if field == "lyrics":
             text = (
                 "✏️ Send the new lyrics.\n\n"
                 "• You can send multiple messages\n"
-                "• Send /done when finished\n"
-                "• Send /cancel to stop editing"
+                "• Click Done when finished"
             )
+            markup = InlineKeyboardMarkup(done_cancel_buttons)
 
             # Prepare buffer
             context.user_data["lyrics_buffer"] = []
@@ -47,12 +53,12 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
 
         else:
             text = (
-                f"✏️ Send new value for: {field}\n\n"
-                "Send /cancel to stop editing."
+                f"✏️ Send new value for: {field}"
             )
+            markup = InlineKeyboardMarkup(cancel_button)
 
 
-    msg = await query.message.reply_text(text)
+    msg = await query.message.reply_text(text, reply_markup=markup)
     context.user_data["edit_prompt_id"] = msg.message_id
 
 
@@ -82,7 +88,25 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
             update.message.message_id
         )
 
-        return  # Wait for /done
+        # Delete old prompt and send new one
+        prompt_id = context.user_data.get("edit_prompt_id")
+        if prompt_id:
+            try:
+                await context.bot.delete_message(update.effective_chat.id, prompt_id)
+            except:
+                pass
+
+        done_cancel_buttons = [
+            [InlineKeyboardButton("✅ Done", callback_data="done_lyrics")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_edit")],
+        ]
+        new_prompt = await update.effective_chat.send_message(
+            "✏️ Send more lyrics, or click Done when finished",
+            reply_markup=InlineKeyboardMarkup(done_cancel_buttons)
+        )
+        context.user_data["edit_prompt_id"] = new_prompt.message_id
+
+        return
 
 
     new_value = update.message.text.strip()
@@ -262,6 +286,89 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         pass
 
 
+async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+
+    if not context.user_data.get("editing_session_active"):
+        await query.answer("No active edit session", show_alert=True)
+        return
+
+    await query.answer()
+
+    # If we were editing lyrics, delete all collected lyric messages
+    if context.user_data.get("editing_field") == "lyrics":
+        for msg_id in context.user_data.get("lyrics_message_ids", []):
+            try:
+                await context.bot.delete_message(update.effective_chat.id, msg_id)
+            except:
+                pass
+
+        context.user_data["lyrics_buffer"] = []
+        context.user_data["lyrics_message_ids"] = []
+
+    # Reset session
+    context.user_data["editing_session_active"] = False
+    context.user_data["editing_field"] = None
+    context.user_data["edit_prompt_id"] = None
+
+    await query.edit_message_text("❌ Edit cancelled")
+    await asyncio.sleep(2)
+    try:
+        await query.message.delete()
+    except:
+        pass
+
+
+async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+
+    if not context.user_data.get("editing_session_active"):
+        await query.answer("No active edit session", show_alert=True)
+        return
+
+    if context.user_data.get("editing_field") != "lyrics":
+        await query.answer("Not in lyrics editing mode", show_alert=True)
+        return
+
+    await query.answer()
+
+    last_data = context.user_data.get("last_telegraph_data")
+    if not last_data:
+        return
+
+    lyrics_parts = context.user_data.get("lyrics_buffer", [])
+    if not lyrics_parts:
+        await query.answer("No lyrics to save", show_alert=True)
+        return
+
+    full_lyrics = "\n".join(lyrics_parts)
+    context.user_data["current_lyrics"] = full_lyrics
+
+    # Delete all lyric messages
+    for msg_id in context.user_data.get("lyrics_message_ids", []):
+        try:
+            await context.bot.delete_message(update.effective_chat.id, msg_id)
+        except:
+            pass
+
+    # Update Telegraph
+    edit_song_page(last_data, full_lyrics)
+
+    # Reset session
+    context.user_data["editing_session_active"] = False
+    context.user_data["editing_field"] = None
+    context.user_data["edit_prompt_id"] = None
+    context.user_data["lyrics_buffer"] = []
+    context.user_data["lyrics_message_ids"] = []
+
+    await query.edit_message_text("✅ Lyrics Updated")
+    await asyncio.sleep(2)
+    try:
+        await query.message.delete()
+    except:
+        pass
+
+
 # Build buttons
 def build_edit_menu():
     return InlineKeyboardMarkup([
@@ -422,10 +529,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = build_edit_menu()
 
     await query.edit_message_text(
-        f"✅ Telegraph created\n\n"
-        "You can now send a music file in this chat to attach the 'Lyrics' button to it.\n"
-        "After attaching, you'll also have the option to send it to channels you added the bot to.\n\n"
-        f'<a href="{telegraph_url}">Open Telegraph Page</a>',
+        f"✅ <b>Telegraph Created</b>\n\n"
+        f"<blockquote>"
+        f"🎵 <b>{track_name}</b>\n"
+        f"👤 {artist_name}\n"
+        f"💽 {album_name}\n"
+        f"📅 {release_date}"
+        f"</blockquote>\n\n"
+        f"Send a <i>music file</i> to attach the <b>Lyrics</b> button to it.\n\n"
+        f"👇 <b>Edit options below</b> — or tap to open the page:\n"
+        f'<a href="{telegraph_url}">📖 Open Telegraph Page</a>',
         parse_mode="HTML",
         reply_markup=reply_markup
     )
