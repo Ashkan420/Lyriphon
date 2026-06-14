@@ -8,6 +8,20 @@ from services.url_validation import is_valid_url
 import asyncio
 
 
+async def _delayed_delete(bot, chat_id, message_id, delay):
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except:
+        pass
+
+
+async def _safe_delete(bot, chat_id, message_id):
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except:
+        pass
+
 
 async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -138,11 +152,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
         else:
             if not is_valid_url(new_value):
                 msg = await update.effective_chat.send_message("❌ Invalid URL format")
-                await asyncio.sleep(5)
-                try:
-                    await msg.delete()
-                except:
-                    pass
+                asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
                 return
 
             if field == "cover":
@@ -168,7 +178,15 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
     # Rebuild Telegraph page
     lyrics = context.user_data.get("current_lyrics", "")
-    edit_song_page(last_data, lyrics)
+    try:
+        edit_song_page(last_data, lyrics)
+    except Exception:
+        context.user_data["editing_session_active"] = False
+        context.user_data["editing_field"] = None
+        context.user_data["edit_prompt_id"] = None
+        msg = await update.effective_chat.send_message("❌ Failed to update Telegraph page")
+        asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
+        return
 
     # Reset session
     context.user_data["editing_session_active"] = False
@@ -176,11 +194,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data["edit_prompt_id"] = None
 
     msg = await update.effective_chat.send_message("✅ Updated")
-    await asyncio.sleep(5)
-    try:
-        await msg.delete()
-    except:
-        pass
+    asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
 
 
 async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -221,11 +235,7 @@ async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Temporary confirmation
     msg = await update.effective_chat.send_message("❌ Edit cancelled")
-    await asyncio.sleep(5)
-    try:
-        await msg.delete()
-    except:
-        pass
+    asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
 
 
 async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -269,7 +279,17 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             pass
 
     # Update Telegraph
-    edit_song_page(last_data, full_lyrics)
+    try:
+        edit_song_page(last_data, full_lyrics)
+    except Exception:
+        context.user_data["editing_session_active"] = False
+        context.user_data["editing_field"] = None
+        context.user_data["edit_prompt_id"] = None
+        context.user_data["lyrics_buffer"] = []
+        context.user_data["lyrics_message_ids"] = []
+        msg = await update.effective_chat.send_message("❌ Failed to update Telegraph page")
+        asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 4))
+        return
 
     # Reset session
     context.user_data["editing_session_active"] = False
@@ -279,11 +299,7 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["lyrics_message_ids"] = []
 
     msg = await update.effective_chat.send_message("✅ Lyrics Updated")
-    await asyncio.sleep(4)
-    try:
-        await msg.delete()
-    except:
-        pass
+    asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 4))
 
 
 async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -311,12 +327,11 @@ async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFA
     context.user_data["editing_field"] = None
     context.user_data["edit_prompt_id"] = None
 
-    await query.edit_message_text("❌ Edit cancelled")
-    await asyncio.sleep(2)
     try:
-        await query.message.delete()
+        await query.edit_message_text("❌ Edit cancelled")
     except:
         pass
+    asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
 
 
 async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -330,16 +345,17 @@ async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFA
         await query.answer("Not in lyrics editing mode", show_alert=True)
         return
 
-    await query.answer()
-
     last_data = context.user_data.get("last_telegraph_data")
     if not last_data:
+        await query.answer("No song data found", show_alert=True)
         return
 
     lyrics_parts = context.user_data.get("lyrics_buffer", [])
     if not lyrics_parts:
         await query.answer("No lyrics to save", show_alert=True)
         return
+
+    await query.answer()
 
     full_lyrics = "\n".join(lyrics_parts)
     context.user_data["current_lyrics"] = full_lyrics
@@ -352,7 +368,17 @@ async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFA
             pass
 
     # Update Telegraph
-    edit_song_page(last_data, full_lyrics)
+    try:
+        edit_song_page(last_data, full_lyrics)
+    except Exception:
+        await query.edit_message_text("❌ Failed to update Telegraph page")
+        context.user_data["editing_session_active"] = False
+        context.user_data["editing_field"] = None
+        context.user_data["edit_prompt_id"] = None
+        context.user_data["lyrics_buffer"] = []
+        context.user_data["lyrics_message_ids"] = []
+        asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
+        return
 
     # Reset session
     context.user_data["editing_session_active"] = False
@@ -362,11 +388,7 @@ async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFA
     context.user_data["lyrics_message_ids"] = []
 
     await query.edit_message_text("✅ Lyrics Updated")
-    await asyncio.sleep(2)
-    try:
-        await query.message.delete()
-    except:
-        pass
+    asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
 
 
 # Build buttons
@@ -438,11 +460,7 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
     )
 
     await query.edit_message_text("✅ Sent to channel!")
-    await asyncio.sleep(2)
-    try:
-        await query.message.delete()
-    except:
-        pass
+    asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
 
     # cleanup
     context.user_data["pending_audio_file_id"] = None
