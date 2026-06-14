@@ -15,11 +15,19 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_text = query.query.strip()
 
     if not query_text:
+        await query.answer(
+            [],
+            cache_time=300,
+            is_personal=True,
+            switch_pm_text="Type a song name to search",
+            switch_pm_parameter="help"
+        )
         return
 
     results = await search_tracks(query_text, limit=5)
 
     if not results:
+        await query.answer([], cache_time=60, is_personal=True)
         return
 
     articles = []
