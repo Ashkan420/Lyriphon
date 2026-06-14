@@ -67,6 +67,10 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     results = await search_tracks(query)
 
+    if results is None:
+        await update.message.reply_text("❌ Search failed. Try again later.")
+        return
+
     if not results:
         await update.message.reply_text("❌ No results found.")
         return

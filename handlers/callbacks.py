@@ -469,6 +469,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     track_data = await get_track(track_id)
 
+    if not track_data:
+        await query.edit_message_text("❌ Failed to fetch track info. Try again later.")
+        return
+
     track_name = track_data.get("title", "Unknown Track")
 
     artist_data = track_data.get("artist", {})
@@ -487,7 +491,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if album_id:
         await query.edit_message_text("⏳ Fetching metadata...")
         album_info = await get_album(album_id)
-        release_date = album_info.get("release_date", "Unknown")
+        if album_info:
+            release_date = album_info.get("release_date", "Unknown")
 
     await query.edit_message_text("⏳ Fetching lyrics...")
 

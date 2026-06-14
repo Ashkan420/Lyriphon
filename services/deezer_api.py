@@ -14,7 +14,7 @@ async def search_tracks(query: str, limit: int = 25):
         data = r.json()
         return data.get("data", [])[:limit]
     except Exception:
-        return []
+        return None
 
 
 async def get_track(track_id: int):
