@@ -1,22 +1,35 @@
-import requests
+import httpx
 
-DEEZEER_SEARCH_URL = "https://api.deezer.com/search"
-DEEZEER_TRACK_URL = "https://api.deezer.com/track/"
-DEEZEER_ALBUM_URL = "https://api.deezer.com/album/"
+DEEZER_SEARCH_URL = "https://api.deezer.com/search"
+DEEZER_TRACK_URL = "https://api.deezer.com/track/"
+DEEZER_ALBUM_URL = "https://api.deezer.com/album/"
 
-def search_tracks(query: str, limit: int = 25):
-    r = requests.get(DEEZEER_SEARCH_URL, params={"q": query})
-    data = r.json()
-
-    results = data.get("data", [])[:limit]
-    return results
+_client = httpx.AsyncClient(timeout=10.0)
 
 
-def get_track(track_id: int):
-    r = requests.get(DEEZEER_TRACK_URL + str(track_id))
-    return r.json()
+async def search_tracks(query: str, limit: int = 25):
+    try:
+        r = await _client.get(DEEZER_SEARCH_URL, params={"q": query})
+        r.raise_for_status()
+        data = r.json()
+        return data.get("data", [])[:limit]
+    except Exception:
+        return []
 
 
-def get_album(album_id: int):
-    r = requests.get(DEEZEER_ALBUM_URL + str(album_id))
-    return r.json()
+async def get_track(track_id: int):
+    try:
+        r = await _client.get(DEEZER_TRACK_URL + str(track_id))
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None
+
+
+async def get_album(album_id: int):
+    try:
+        r = await _client.get(DEEZER_ALBUM_URL + str(album_id))
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None

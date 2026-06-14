@@ -1,17 +1,19 @@
-import requests
-import time
+import httpx
+import asyncio
 import random
 
 LRCLIB_SEARCH = "https://lrclib.net/api/search"
 
-def get_lyrics(track: str, artist: str, retries: int = 2, timeout: int = 15, delay: float = 2.0):
+_client = httpx.AsyncClient(timeout=15.0)
+
+
+async def get_lyrics(track: str, artist: str, retries: int = 2, delay: float = 2.0):
     attempt = 0
     while attempt <= retries:
         try:
-            r = requests.get(
+            r = await _client.get(
                 LRCLIB_SEARCH,
                 params={"track_name": track, "artist_name": artist},
-                timeout=timeout
             )
             r.raise_for_status()
             results = r.json()
@@ -25,14 +27,12 @@ def get_lyrics(track: str, artist: str, retries: int = 2, timeout: int = 15, del
             attempt += 1
             if attempt <= retries:
                 wait = delay * (2 ** attempt) + random.random()
-                #print(f"Retrying in {wait:.1f}s (no lyrics yet)")
-                time.sleep(wait)
+                await asyncio.sleep(wait)
 
-        except requests.exceptions.RequestException as e:
+        except Exception:
             attempt += 1
             if attempt <= retries:
                 wait = delay * (2 ** attempt) + random.random()
-                #print(f"Attempt {attempt-1} failed: {e}, retrying in {wait:.1f}s")
-                time.sleep(wait)
+                await asyncio.sleep(wait)
 
     return None

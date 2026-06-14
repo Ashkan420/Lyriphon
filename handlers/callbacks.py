@@ -467,7 +467,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text("⏳ Fetching track info...")
 
-    track_data = get_track(track_id)
+    track_data = await get_track(track_id)
 
     track_name = track_data.get("title", "Unknown Track")
 
@@ -486,12 +486,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     release_date = "Unknown"
     if album_id:
         await query.edit_message_text("⏳ Fetching metadata...")
-        album_info = get_album(album_id)
+        album_info = await get_album(album_id)
         release_date = album_info.get("release_date", "Unknown")
 
     await query.edit_message_text("⏳ Fetching lyrics...")
 
-    lyrics = get_lyrics(track_name, artist_name)
+    lyrics = await get_lyrics(track_name, artist_name)
 
     user = update.effective_user
     author_name = user.full_name if user else "Unknown User"
