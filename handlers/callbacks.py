@@ -438,13 +438,11 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
     )
 
     await query.edit_message_text("✅ Sent to channel!")
-
-    context.user_data["send_channel_prompt_id"] = None
-
-    await query.delete_message()
-
-    print("CALLBACK DATA:", query.data)
-    print("CHANNEL ID:", channel_id)
+    await asyncio.sleep(2)
+    try:
+        await query.message.delete()
+    except:
+        pass
 
     # cleanup
     context.user_data["pending_audio_file_id"] = None

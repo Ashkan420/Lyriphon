@@ -1,0 +1,58 @@
+from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+from telegram.constants import ParseMode
+from services.deezer_api import search_tracks
+
+
+def format_duration(seconds: int) -> str:
+    minutes = seconds // 60
+    sec = seconds % 60
+    return f"{minutes}:{sec:02d}"
+
+
+async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.inline_query
+    query_text = query.query.strip()
+
+    if not query_text:
+        return
+
+    results = await search_tracks(query_text, limit=5)
+
+    if not results:
+        return
+
+    articles = []
+    for item in results:
+        track_name = item.get("title", "Unknown")
+        artist_name = item.get("artist", {}).get("name", "Unknown")
+        track_id = item.get("id")
+        duration = item.get("duration", 0)
+        album_cover = item.get("album", {}).get("cover_medium", "")
+
+        dur_text = format_duration(duration)
+
+        message_text = (
+            f"🎵 *{track_name}*\n"
+            f"👤 {artist_name}\n"
+            f"⏱ {dur_text}"
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📄 Get Lyrics", callback_data=f"track_{track_id}")]
+        ])
+
+        article = InlineQueryResultArticle(
+            id=str(track_id),
+            title=f"{track_name} - {artist_name}",
+            description=f"{artist_name} ({dur_text})",
+            thumbnail_url=album_cover if album_cover else None,
+            input_message_content=InputTextMessageContent(
+                message_text=message_text,
+                parse_mode=ParseMode.MARKDOWN,
+            ),
+            reply_markup=keyboard,
+        )
+        articles.append(article)
+
+    await query.answer(articles, cache_time=300, is_personal=True)
