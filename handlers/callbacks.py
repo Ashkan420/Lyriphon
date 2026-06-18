@@ -180,7 +180,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
     # Rebuild Telegraph page
     lyrics = context.user_data.get("current_lyrics", "")
     try:
-        edit_song_page(last_data, lyrics)
+        await asyncio.to_thread(edit_song_page, last_data, lyrics)
     except Exception:
         context.user_data["editing_session_active"] = False
         context.user_data["editing_field"] = None
@@ -285,7 +285,7 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Update Telegraph
     try:
-        edit_song_page(last_data, full_lyrics)
+        await asyncio.to_thread(edit_song_page, last_data, full_lyrics)
     except Exception:
         context.user_data["editing_session_active"] = False
         context.user_data["editing_field"] = None
@@ -374,7 +374,7 @@ async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFA
 
     # Update Telegraph
     try:
-        edit_song_page(last_data, full_lyrics)
+        await asyncio.to_thread(edit_song_page, last_data, full_lyrics)
     except Exception:
         await query.edit_message_text("❌ Failed to update Telegraph page")
         context.user_data["editing_session_active"] = False
@@ -528,7 +528,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text("⏳ Creating Telegraph page...")
 
-    telegraph_url, telegraph_path, last_data = create_song_telegraph(
+    telegraph_url, telegraph_path, last_data = await asyncio.to_thread(
+        create_song_telegraph,
         author_name=author_name,
         #author_url=author_url,
         track=track_name,
@@ -611,36 +612,50 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["send_channel_prompt_id"] = prompt.message_id
 
         # Edit the search message to show success
-        reply_markup = build_edit_menu()
+        is_inline = bool(query.inline_message_id)
+        if is_inline:
+            await query.edit_message_text(
+                f"<a href=\"{telegraph_url}\">{track_name} - {artist_name}</a>",
+                parse_mode="HTML"
+            )
+        else:
+            reply_markup = build_edit_menu()
+            await query.edit_message_text(
+                f"✅ <b>Telegraph Created & Audio Attached</b>\n\n"
+                f"<blockquote>"
+                f"🎵 <b>{track_name}</b>\n"
+                f"👤 {artist_name}\n"
+                f"💽 {album_name}\n"
+                f"📅 {release_date}"
+                f"</blockquote>\n\n"
+                f"👇 Edit options below — or tap to open the page:\n"
+                f'<a href="{telegraph_url}">📖 Open Telegraph Page</a>',
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+        return
+
+    # No pending audio - show normal message
+    is_inline = bool(query.inline_message_id)
+    if is_inline:
         await query.edit_message_text(
-            f"✅ <b>Telegraph Created & Audio Attached</b>\n\n"
+            f"<a href=\"{telegraph_url}\">{track_name} - {artist_name}</a>",
+            parse_mode="HTML"
+        )
+    else:
+        reply_markup = build_edit_menu()
+
+        await query.edit_message_text(
+            f"✅ <b>Telegraph Created</b>\n\n"
             f"<blockquote>"
             f"🎵 <b>{track_name}</b>\n"
             f"👤 {artist_name}\n"
             f"💽 {album_name}\n"
             f"📅 {release_date}"
             f"</blockquote>\n\n"
+            f"Send a music file to attach the Lyrics button to it.\n\n"
             f"👇 Edit options below — or tap to open the page:\n"
             f'<a href="{telegraph_url}">📖 Open Telegraph Page</a>',
             parse_mode="HTML",
             reply_markup=reply_markup
         )
-        return
-
-    # No pending audio - show normal message
-    reply_markup = build_edit_menu()
-
-    await query.edit_message_text(
-        f"✅ <b>Telegraph Created</b>\n\n"
-        f"<blockquote>"
-        f"🎵 <b>{track_name}</b>\n"
-        f"👤 {artist_name}\n"
-        f"💽 {album_name}\n"
-        f"📅 {release_date}"
-        f"</blockquote>\n\n"
-        f"Send a music file to attach the Lyrics button to it.\n\n"
-        f"👇 Edit options below — or tap to open the page:\n"
-        f'<a href="{telegraph_url}">📖 Open Telegraph Page</a>',
-        parse_mode="HTML",
-        reply_markup=reply_markup
-    )
