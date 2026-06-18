@@ -6,6 +6,7 @@ from handlers.callbacks import handle_callback, send_to_channel_callback, handle
 from handlers.handle_music_file import handle_music_file
 from handlers.channel_tracker import track_channels
 from handlers.inline_search import inline_search
+from core.session import session_debug_command
 from db import init_db
 
 
@@ -18,6 +19,7 @@ app.add_handler(CommandHandler("help", help_command))
 app.add_handler(CommandHandler("song", song_search))
 app.add_handler(CommandHandler("done", done_lyrics_command))
 app.add_handler(CommandHandler("cancel", cancel_edit_command))
+app.add_handler(CommandHandler("session", session_debug_command))
 app.add_handler(ChatMemberHandler(track_channels, ChatMemberHandler.MY_CHAT_MEMBER))
 app.add_handler(CallbackQueryHandler(handle_audio_decision_callback, pattern="^audio_decision_"))
 app.add_handler(CallbackQueryHandler(handle_search_page_callback, pattern="^search_page_"))

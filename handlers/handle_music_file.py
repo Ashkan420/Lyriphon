@@ -2,26 +2,19 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
 from handlers.song_search import build_track_buttons
-
+from core.session import get_session, set_mode, in_mode, SessionMode
 
 
 async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handle audio files:
-    1. If user has a pending Telegraph, attach it to the audio
-    2. Otherwise, auto-trigger search flow
-    """
-
     music_msg = update.message
+    session = get_session(context)
 
-    # Handle media groups (multiple audio messages)
     if music_msg.media_group_id:
         await update.message.reply_text(
             "❌ Please send only one music file at a time."
         )
         return
 
-    # Extract metadata from audio
     title = music_msg.audio.title if music_msg.audio and music_msg.audio.title else None
     artist = music_msg.audio.performer if music_msg.audio and music_msg.audio.performer else None
     filename = music_msg.audio.file_name if music_msg.audio and music_msg.audio.file_name else "Unknown"
@@ -31,7 +24,6 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not artist:
         artist = ""
 
-    # Parse common filename patterns for better metadata
     if " - " in title:
         parts = title.split(" - ", 1)
         artist = artist or parts[0].strip()
@@ -45,18 +37,19 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         artist = artist or parts[0].strip()
         title = parts[1].strip()
 
-    # Case 1: User has a pending Telegraph - show decision menu
-    telegraph_url = context.user_data.get("last_telegraph")
-    last_data = context.user_data.get("last_telegraph_data")
+    telegraph_url = session["telegraph"]["url"]
+    last_data = session["telegraph"]["data"]
+    has_pending_audio = session["audio"]["file_id"] is not None
+    in_edit = in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS)
 
-    if telegraph_url and last_data and not context.user_data.get("pending_audio") and not context.user_data.get("editing_session_active"):
-        # Store audio info for the decision callback
-        context.user_data["pending_audio_decision"] = {
+    if telegraph_url and last_data and not has_pending_audio and not in_edit:
+        session["audio"]["pending_decision"] = {
             "file_id": music_msg.audio.file_id if music_msg.audio else None,
             "message_id": music_msg.message_id,
             "title": title,
             "artist": artist,
         }
+        set_mode(session, SessionMode.AUDIO_DECISION)
 
         decision_buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("📎 Attach to Current Telegraph", callback_data="audio_decision_attach")],
@@ -71,21 +64,14 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Case 2: No pending Telegraph - auto-trigger search flow
-    # Check if user is in edit mode
-    if context.user_data.get("editing_session_active"):
+    if in_edit:
         return
 
-    # Store pending audio session
-    context.user_data["pending_audio"] = {
-        "file_id": music_msg.audio.file_id if music_msg.audio else None,
-        "title": title,
-        "artist": artist,
-        "mode": "auto_audio_flow",
-        "message_id": music_msg.message_id
-    }
+    session["audio"]["file_id"] = music_msg.audio.file_id if music_msg.audio else None
+    session["audio"]["title"] = title
+    session["audio"]["artist"] = artist
+    session["audio"]["message_id"] = music_msg.message_id
 
-    # Auto-trigger search
     search_query = f"{artist} {title}".strip()
     results = await search_tracks(search_query)
 
@@ -94,7 +80,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=update.effective_chat.id,
             text="❌ Search failed. Try again later."
         )
-        context.user_data["pending_audio"] = None
+        session["audio"]["file_id"] = None
         return
 
     if not results:
@@ -102,11 +88,12 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=update.effective_chat.id,
             text="❌ No results found."
         )
-        context.user_data["pending_audio"] = None
+        session["audio"]["file_id"] = None
         return
 
-    context.user_data["song_search_results"] = results
-    context.user_data["song_search_page"] = 0
+    session["search"]["results"] = results
+    session["search"]["page"] = 0
+    set_mode(session, SessionMode.SEARCH)
 
     buttons = build_track_buttons(results, page=0)
 

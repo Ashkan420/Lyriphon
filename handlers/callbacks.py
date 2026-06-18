@@ -7,6 +7,7 @@ from telegram.constants import ParseMode
 from services.url_validation import is_valid_url
 from handlers.escape_md import escape_md
 from handlers.song_search import build_track_buttons
+from core.session import get_session, reset_session, set_mode, in_mode, SessionMode
 import asyncio
 import logging
 
@@ -28,56 +29,49 @@ async def _safe_delete(bot, chat_id, message_id):
         pass
 
 
-def reset_edit_session(context):
-    context.user_data["editing_session_active"] = False
-    context.user_data["editing_field"] = None
-    context.user_data["edit_prompt_id"] = None
-    context.user_data["lyrics_buffer"] = []
-    context.user_data["lyrics_message_ids"] = []
-
-
 async def finalize_lyrics(update, context, source="callback"):
     query = update.callback_query if source == "callback" else None
+    session = get_session(context)
 
-    if context.user_data.get("editing_field") != "lyrics":
+    if not in_mode(session, SessionMode.EDIT_LYRICS):
         if query:
             await query.answer("Not in lyrics editing mode", show_alert=True)
         return False
 
-    last_data = context.user_data.get("last_telegraph_data")
+    last_data = session["telegraph"]["data"]
     if not last_data:
         if query:
             await query.answer("No song data found", show_alert=True)
         return False
 
-    lyrics_parts = context.user_data.get("lyrics_buffer", [])
+    lyrics_parts = session["lyrics"]["buffer"]
     if not lyrics_parts:
         if query:
             await query.answer("No lyrics to save", show_alert=True)
         return False
 
-    if context.user_data.get("lyrics_finalizing"):
+    if session["lyrics"]["finalizing"]:
         if query:
             await query.answer("Already finalizing...", show_alert=True)
         return False
 
-    context.user_data["lyrics_finalizing"] = True
+    session["lyrics"]["finalizing"] = True
 
     if query:
         await query.answer()
 
     full_lyrics = "\n".join(lyrics_parts)
-    context.user_data["current_lyrics"] = full_lyrics
+    session["telegraph"]["current_lyrics"] = full_lyrics
 
     chat_id = update.effective_chat.id
 
-    for msg_id in context.user_data.get("lyrics_message_ids", []):
+    for msg_id in session["lyrics"].get("message_ids", []):
         try:
             await context.bot.delete_message(chat_id, msg_id)
         except:
             pass
 
-    prompt_id = context.user_data.get("edit_prompt_id")
+    prompt_id = session["edit"]["prompt_id"]
     if prompt_id:
         try:
             await context.bot.delete_message(chat_id, prompt_id)
@@ -87,8 +81,7 @@ async def finalize_lyrics(update, context, source="callback"):
     try:
         await asyncio.to_thread(edit_song_page, last_data, full_lyrics)
     except Exception:
-        reset_edit_session(context)
-        context.user_data["lyrics_finalizing"] = False
+        reset_session(context)
         if query:
             await query.edit_message_text("❌ Failed to update Telegraph page")
             asyncio.create_task(_safe_delete(context.bot, chat_id, query.message.message_id))
@@ -97,8 +90,7 @@ async def finalize_lyrics(update, context, source="callback"):
             asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, 4))
         return False
 
-    reset_edit_session(context)
-    context.user_data["lyrics_finalizing"] = False
+    reset_session(context)
 
     if query:
         await query.edit_message_text("✅ Lyrics Updated")
@@ -115,7 +107,8 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
     await query.answer()
 
     data = query.data
-    decision = context.user_data.get("pending_audio_decision")
+    session = get_session(context)
+    decision = session["audio"]["pending_decision"]
     if not decision:
         try:
             await query.edit_message_text("❌ This selection has expired.")
@@ -129,7 +122,7 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
     artist = decision.get("artist", "")
     chat_id = query.message.chat_id
 
-    context.user_data["pending_audio_decision"] = None
+    session["audio"]["pending_decision"] = None
 
     try:
         await context.bot.delete_message(chat_id, query.message.message_id)
@@ -137,8 +130,8 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
         pass
 
     if data == "audio_decision_attach":
-        telegraph_url = context.user_data.get("last_telegraph")
-        last_data = context.user_data.get("last_telegraph_data")
+        telegraph_url = session["telegraph"]["url"]
+        last_data = session["telegraph"]["data"]
         if not telegraph_url or not last_data:
             await context.bot.send_message(chat_id=chat_id, text="❌ Telegraph expired. Send /song to create a new one.")
             return
@@ -168,9 +161,9 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
             return
 
         if file_id:
-            context.user_data["pending_audio_file_id"] = file_id
-            context.user_data["pending_caption"] = caption
-            context.user_data["pending_telegraph_url"] = telegraph_url
+            session["audio"]["pending_file_id"] = file_id
+            session["audio"]["pending_caption"] = caption
+            session["audio"]["pending_telegraph_url"] = telegraph_url
 
         from db import get_user_channels
         user_channels = await get_user_channels(update.effective_user.id)
@@ -184,34 +177,33 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
                 text="Send to which channel?",
                 reply_markup=InlineKeyboardMarkup(channel_buttons)
             )
-            context.user_data["send_channel_prompt_id"] = prompt.message_id
+            session["audio"]["send_channel_prompt_id"] = prompt.message_id
 
-        context.user_data["last_telegraph"] = None
+        session["telegraph"]["url"] = None
+        set_mode(session, SessionMode.IDLE)
 
     elif data == "audio_decision_search":
-        context.user_data["pending_audio"] = {
-            "file_id": file_id,
-            "title": title,
-            "artist": artist,
-            "mode": "auto_audio_flow",
-            "message_id": message_id,
-        }
+        session["audio"]["file_id"] = file_id
+        session["audio"]["title"] = title
+        session["audio"]["artist"] = artist
+        session["audio"]["message_id"] = message_id
 
         search_query = f"{artist} {title}".strip()
         results = await search_tracks(search_query)
 
         if results is None:
             await context.bot.send_message(chat_id=chat_id, text="❌ Search failed. Try again later.")
-            context.user_data["pending_audio"] = None
+            session["audio"]["file_id"] = None
             return
 
         if not results:
             await context.bot.send_message(chat_id=chat_id, text="❌ No results found.")
-            context.user_data["pending_audio"] = None
+            session["audio"]["file_id"] = None
             return
 
-        context.user_data["song_search_results"] = results
-        context.user_data["song_search_page"] = 0
+        session["search"]["results"] = results
+        session["search"]["page"] = 0
+        set_mode(session, SessionMode.SEARCH)
 
         buttons = build_track_buttons(results, page=0)
         match_text = f"{artist} - {title}" if artist else title
@@ -222,22 +214,22 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
         )
 
     elif data == "audio_decision_cancel":
+        set_mode(session, SessionMode.IDLE)
         await context.bot.send_message(chat_id=chat_id, text="❌ Cancelled.")
 
 
 async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    session = get_session(context)
 
-    # Per-user session lock
-    if context.user_data.get("editing_session_active"):
+    if in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS):
         await query.answer("❌ You already have an active edit session", show_alert=True)
         return
-    context.user_data["editing_session_active"] = True
 
-    await query.answer()  # answer immediately to remove "loading..." popup
+    await query.answer()
 
     field = query.data.replace("edit_field_", "")
-    context.user_data["editing_field"] = field
+    session["edit"]["field"] = field
 
     url_fields = ["track_link", "artist_link", "album_link", "cover"]
 
@@ -254,6 +246,7 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
             "• Type 'none' to remove it"
         )
         markup = InlineKeyboardMarkup(cancel_button)
+        set_mode(session, SessionMode.EDIT_FIELD)
     else:
         if field == "lyrics":
             text = (
@@ -263,50 +256,49 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
             )
             markup = InlineKeyboardMarkup(done_cancel_buttons)
 
-            # Prepare buffer
-            context.user_data["lyrics_buffer"] = []
-            context.user_data["lyrics_message_ids"] = []
+            session["lyrics"]["buffer"] = []
+            session["lyrics"]["message_ids"] = []
+            set_mode(session, SessionMode.EDIT_LYRICS)
 
         else:
             text = (
                 f"✏️ Send new value for: {field}"
             )
             markup = InlineKeyboardMarkup(cancel_button)
+            set_mode(session, SessionMode.EDIT_FIELD)
 
 
     msg = await query.message.reply_text(text, reply_markup=markup)
-    context.user_data["edit_prompt_id"] = msg.message_id
-
+    session["edit"]["prompt_id"] = msg.message_id
 
 
 
 async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session = get_session(context)
 
-    # Must be in active edit session
-    if not context.user_data.get("editing_session_active"):
+    if not (in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS)):
         logger.debug("Ignored message: not in edit session")
         return
 
-    field = context.user_data.get("editing_field")
+    field = session["edit"]["field"]
     if not field:
         return
 
-    # LYRICS COLLECTION MODE
     if field == "lyrics":
+        if session["lyrics"]["finalizing"]:
+            return
 
         text = update.message.text
 
-        # Ignore commands except /done (handled elsewhere)
         if text.startswith("/"):
             return
 
-        context.user_data.setdefault("lyrics_buffer", []).append(text)
-        context.user_data.setdefault("lyrics_message_ids", []).append(
+        session["lyrics"]["buffer"].append(text)
+        session["lyrics"]["message_ids"].append(
             update.message.message_id
         )
 
-        # Delete old prompt and send new one
-        prompt_id = context.user_data.get("edit_prompt_id")
+        prompt_id = session["edit"]["prompt_id"]
         if prompt_id:
             try:
                 await context.bot.delete_message(update.effective_chat.id, prompt_id)
@@ -321,22 +313,21 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
             "✏️ Send more lyrics, or click Done when finished",
             reply_markup=InlineKeyboardMarkup(done_cancel_buttons)
         )
-        context.user_data["edit_prompt_id"] = new_prompt.message_id
+        session["edit"]["prompt_id"] = new_prompt.message_id
 
         return
 
 
     new_value = update.message.text.strip()
-    last_data = context.user_data.get("last_telegraph_data")
+    last_data = session["telegraph"]["data"]
     if not last_data:
         return
 
-    # Delete user's message and prompt
     try:
         await update.message.delete()
     except:
         pass
-    prompt_id = context.user_data.get("edit_prompt_id")
+    prompt_id = session["edit"]["prompt_id"]
     if prompt_id:
         try:
             await context.bot.delete_message(update.effective_chat.id, prompt_id)
@@ -345,7 +336,6 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
     url_fields = ["track_link", "artist_link", "album_link", "cover"]
 
-    # Handle URL fields
     if field in url_fields:
         if new_value.lower() == "none":
             if field == "cover":
@@ -364,11 +354,8 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
                 last_data[field] = new_value
 
 
-    # Handle non-URL fields
     else:
-        if field == "lyrics":
-            context.user_data["current_lyrics"] = new_value
-        elif field == "track":
+        if field == "track":
             last_data["track"] = new_value
         elif field == "artist":
             last_data["artist"] = new_value
@@ -379,66 +366,65 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
         elif field == "author":
             last_data["author_name"] = new_value
 
-    # Rebuild Telegraph page
-    lyrics = context.user_data.get("current_lyrics", "")
+    lyrics = session["telegraph"]["current_lyrics"] or ""
     try:
         await asyncio.to_thread(edit_song_page, last_data, lyrics)
     except Exception:
-        reset_edit_session(context)
+        reset_session(context)
         msg = await update.effective_chat.send_message("❌ Failed to update Telegraph page")
         asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
         return
 
-    reset_edit_session(context)
+    reset_session(context)
 
     msg = await update.effective_chat.send_message("✅ Updated")
     asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
 
 
 async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session = get_session(context)
 
-    # Clear pending audio session if active
-    if context.user_data.get("pending_audio"):
-        context.user_data["pending_audio"] = None
-
-    if not context.user_data.get("editing_session_active"):
-        return
-
-    # Delete /cancel message
-    try:
-        await update.message.delete()
-    except:
-        pass
-
-    # Delete prompt
-    prompt_id = context.user_data.get("edit_prompt_id")
-    if prompt_id:
+    if in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS):
         try:
-            await context.bot.delete_message(update.effective_chat.id, prompt_id)
+            await update.message.delete()
         except:
             pass
 
-    # If we were editing lyrics → delete all collected lyric messages
-    if context.user_data.get("editing_field") == "lyrics":
-        for msg_id in context.user_data.get("lyrics_message_ids", []):
+        prompt_id = session["edit"]["prompt_id"]
+        if prompt_id:
             try:
-                await context.bot.delete_message(update.effective_chat.id, msg_id)
+                await context.bot.delete_message(update.effective_chat.id, prompt_id)
             except:
                 pass
 
-    reset_edit_session(context)
+        if in_mode(session, SessionMode.EDIT_LYRICS):
+            for msg_id in session["lyrics"].get("message_ids", []):
+                try:
+                    await context.bot.delete_message(update.effective_chat.id, msg_id)
+                except:
+                    pass
 
-    # Temporary confirmation
-    msg = await update.effective_chat.send_message("❌ Edit cancelled")
-    asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
+        reset_session(context)
+
+        msg = await update.effective_chat.send_message("❌ Edit cancelled")
+        asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
+        return
+
+    if session["audio"]["file_id"] is not None:
+        session["audio"]["file_id"] = None
+        session["audio"]["title"] = None
+        session["audio"]["artist"] = None
+        session["audio"]["message_id"] = None
+
+    reset_session(context)
 
 
 async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session = get_session(context)
 
-    if not context.user_data.get("editing_session_active"):
+    if not in_mode(session, SessionMode.EDIT_LYRICS):
         return
 
-    # Delete /done message
     try:
         await update.message.delete()
     except:
@@ -449,21 +435,22 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    session = get_session(context)
 
-    if not context.user_data.get("editing_session_active"):
+    if not (in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS)):
         await query.answer("No active edit session", show_alert=True)
         return
 
     await query.answer()
 
-    if context.user_data.get("editing_field") == "lyrics":
-        for msg_id in context.user_data.get("lyrics_message_ids", []):
+    if in_mode(session, SessionMode.EDIT_LYRICS):
+        for msg_id in session["lyrics"].get("message_ids", []):
             try:
                 await context.bot.delete_message(update.effective_chat.id, msg_id)
             except:
                 pass
 
-    reset_edit_session(context)
+    reset_session(context)
 
     try:
         await query.edit_message_text("❌ Edit cancelled")
@@ -474,15 +461,15 @@ async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFA
 
 async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    session = get_session(context)
 
-    if not context.user_data.get("editing_session_active"):
+    if not in_mode(session, SessionMode.EDIT_LYRICS):
         await query.answer("No active edit session", show_alert=True)
         return
 
     await finalize_lyrics(update, context, source="callback")
 
 
-# Build buttons
 def build_edit_menu():
     return InlineKeyboardMarkup([
         [
@@ -514,22 +501,22 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
 
     data = query.data
+    session = get_session(context)
 
     if not data.startswith("send_channel_"):
         return
 
     channel_id = int(data.replace("send_channel_", ""))
 
-    audio_file_id = context.user_data.get("pending_audio_file_id")
-    caption = context.user_data.get("pending_caption")
-    telegraph_url = context.user_data.get("pending_telegraph_url")
+    audio_file_id = session["audio"]["pending_file_id"]
+    caption = session["audio"]["pending_caption"]
+    telegraph_url = session["audio"]["pending_telegraph_url"]
 
     if not audio_file_id or not telegraph_url or not caption:
         await query.edit_message_text("❌ Nothing to send.")
-        context.user_data["send_channel_prompt_id"] = None
+        session["audio"]["send_channel_prompt_id"] = None
         return
 
-    # check if user is admin in that channel
     try:
         member = await context.bot.get_chat_member(channel_id, query.from_user.id)
         if member.status not in ["administrator", "creator"]:
@@ -554,11 +541,10 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
     await query.edit_message_text("✅ Sent to channel!")
     asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
 
-    # cleanup
-    context.user_data["pending_audio_file_id"] = None
-    context.user_data["pending_caption"] = None
-    context.user_data["pending_telegraph_url"] = None
-    context.user_data["send_channel_prompt_id"] = None
+    session["audio"]["pending_file_id"] = None
+    session["audio"]["pending_caption"] = None
+    session["audio"]["pending_telegraph_url"] = None
+    session["audio"]["send_channel_prompt_id"] = None
 
 
 
@@ -567,15 +553,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     data = query.data
+    session = get_session(context)
 
     if not data.startswith("track_"):
         return
 
     track_id = int(data.replace("track_", ""))
 
-    # Clear stale search results
-    context.user_data["song_search_results"] = None
-    context.user_data["song_search_page"] = None
+    session["search"]["results"] = None
+    session["search"]["page"] = 0
 
     await query.edit_message_text("⏳ Fetching track info...")
 
@@ -598,7 +584,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     album_cover_url = album_data.get("cover_xl") or album_data.get("cover_big")
 
-    # Get release date from album endpoint
     release_date = "Unknown"
     if album_id:
         await query.edit_message_text("⏳ Fetching metadata...")
@@ -612,17 +597,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
     author_name = user.full_name if user else "Unknown User"
-    author_url = "https://t.me/bichniga"
-
-    #if user and user.username:
-    #    author_url = f"https://t.me/{user.username}"
 
     await query.edit_message_text("⏳ Creating Telegraph page...")
 
     telegraph_url, telegraph_path, last_data = await asyncio.to_thread(
         create_song_telegraph,
         author_name=author_name,
-        #author_url=author_url,
         track=track_name,
         track_id=track_id,
         artist=artist_name,
@@ -634,28 +614,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lyrics=lyrics
     )
 
-    # store it for this user
-    context.user_data["current_lyrics"] = lyrics
-    context.user_data["last_telegraph"] = telegraph_url
-    context.user_data["last_telegraph_path"] = telegraph_path
-    context.user_data["last_track_name"] = track_name
-    context.user_data["last_artist_name"] = artist_name
-    context.user_data["last_telegraph_data"] = last_data
+    session["telegraph"]["current_lyrics"] = lyrics
+    session["telegraph"]["url"] = telegraph_url
+    session["telegraph"]["path"] = telegraph_path
+    session["telegraph"]["data"] = last_data
 
-    # Check if there's a pending audio to auto-attach
-    pending_audio = context.user_data.get("pending_audio")
-    if pending_audio and pending_audio.get("file_id"):
-        # Auto-attach the audio
-        file_id = pending_audio["file_id"]
-        message_id = pending_audio.get("message_id")
+    pending_audio_file_id = session["audio"]["file_id"]
+    if pending_audio_file_id:
+        pending_message_id = session["audio"]["message_id"]
 
-        # Create caption with telegraph link
         track_name_md = escape_md(track_name)
         artist_name_md = escape_md(artist_name)
         hidden_link = f"[‎]({telegraph_url})"
         caption = f'>`{track_name_md} — {artist_name_md}`{hidden_link}'
 
-        # Send audio with telegraph button
         button = InlineKeyboardMarkup(
             [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
         )
@@ -663,36 +635,35 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_audio(
                 chat_id=query.message.chat_id,
-                audio=file_id,
+                audio=pending_audio_file_id,
                 caption=caption,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=button
             )
         except Exception:
             await query.edit_message_text("❌ Failed to attach audio. Try again.")
-            context.user_data["pending_audio"] = None
+            session["audio"]["file_id"] = None
             return
 
-        # Store for channel sending
-        context.user_data["pending_audio_file_id"] = file_id
-        context.user_data["pending_caption"] = caption
-        context.user_data["pending_telegraph_url"] = telegraph_url
+        session["audio"]["pending_file_id"] = pending_audio_file_id
+        session["audio"]["pending_caption"] = caption
+        session["audio"]["pending_telegraph_url"] = telegraph_url
 
-        # Delete the original audio message
-        if message_id:
+        if pending_message_id:
             try:
                 await context.bot.delete_message(
                     chat_id=query.message.chat_id,
-                    message_id=message_id
+                    message_id=pending_message_id
                 )
             except:
                 pass
 
-        # Clear pending audio and telegraph state
-        context.user_data["pending_audio"] = None
-        context.user_data["last_telegraph"] = None
+        session["audio"]["file_id"] = None
+        session["audio"]["title"] = None
+        session["audio"]["artist"] = None
+        session["audio"]["message_id"] = None
+        session["telegraph"]["url"] = None
 
-        # Ask which channel to send to
         from db import get_user_channels
         user_channels = await get_user_channels(update.effective_user.id)
         if user_channels:
@@ -704,9 +675,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Send to which channel?",
                 reply_markup=InlineKeyboardMarkup(channel_buttons)
             )
-            context.user_data["send_channel_prompt_id"] = prompt.message_id
+            session["audio"]["send_channel_prompt_id"] = prompt.message_id
 
-        # Edit the search message to show success
         is_inline = bool(query.inline_message_id)
         if is_inline:
             await query.edit_message_text(
@@ -730,7 +700,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # No pending audio - show normal message
     is_inline = bool(query.inline_message_id)
     if is_inline:
         await query.edit_message_text(

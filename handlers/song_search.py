@@ -1,8 +1,9 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
+from core.session import get_session, set_mode, in_mode, SessionMode
 
-PAGE_SIZE = 5  # tracks per page
+PAGE_SIZE = 5
 
 
 def format_duration(seconds: int) -> str:
@@ -12,9 +13,6 @@ def format_duration(seconds: int) -> str:
 
 
 def build_track_buttons(results, page: int = 0):
-    """
-    Build inline keyboard for a page of results with Next/Previous/First navigation.
-    """
     start = page * PAGE_SIZE
     end = start + PAGE_SIZE
     page_results = results[start:end]
@@ -30,7 +28,6 @@ def build_track_buttons(results, page: int = 0):
         button_text = f"{track_name} - {artist_name} ({dur_text})"
         buttons.append([InlineKeyboardButton(button_text, callback_data=f"track_{track_id}")])
 
-    # Navigation row
     nav_buttons = []
 
     if page > 0:
@@ -39,7 +36,6 @@ def build_track_buttons(results, page: int = 0):
     if len(results) > end:
         nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"search_page_{page+1}"))
 
-    # First page button only on the last page
     total_pages = (len(results) - 1) // PAGE_SIZE
     if page == total_pages and total_pages > 0:
         nav_buttons.insert(0, InlineKeyboardButton("⏪ First", callback_data="search_page_0"))
@@ -51,16 +47,20 @@ def build_track_buttons(results, page: int = 0):
 
 
 async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /song command with paginated results."""
-    context.user_data["pending_audio"] = None
+    session = get_session(context)
 
-    prompt_id = context.user_data.get("send_channel_prompt_id")
+    session["audio"]["file_id"] = None
+    session["audio"]["title"] = None
+    session["audio"]["artist"] = None
+    session["audio"]["message_id"] = None
+
+    prompt_id = session["audio"]["send_channel_prompt_id"]
     if prompt_id:
         try:
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=prompt_id)
         except:
             pass
-        context.user_data["send_channel_prompt_id"] = None
+        session["audio"]["send_channel_prompt_id"] = None
 
     if not context.args:
         await update.message.reply_text("❌ Usage: /song <track name>")
@@ -77,8 +77,9 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ No results found.")
         return
 
-    context.user_data["song_search_results"] = results
-    context.user_data["song_search_page"] = 0
+    session["search"]["results"] = results
+    session["search"]["page"] = 0
+    set_mode(session, SessionMode.SEARCH)
 
     buttons = build_track_buttons(results, page=0)
 
@@ -89,22 +90,22 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_search_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle Next / Previous / First button presses."""
     query = update.callback_query
     await query.answer()
     data = query.data
+    session = get_session(context)
 
     if not data.startswith("search_page_"):
         return
 
     page = int(data.replace("search_page_", ""))
-    results = context.user_data.get("song_search_results", [])
+    results = session["search"]["results"]
 
     if not results:
         await query.edit_message_text("❌ Search expired. Try again with /song.")
         return
 
-    context.user_data["song_search_page"] = page
+    session["search"]["page"] = page
     buttons = build_track_buttons(results, page=page)
 
     await query.edit_message_text(
