@@ -8,6 +8,9 @@ from services.url_validation import is_valid_url
 from handlers.escape_md import escape_md
 from handlers.song_search import build_track_buttons
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def _delayed_delete(bot, chat_id, message_id, delay):
@@ -23,6 +26,88 @@ async def _safe_delete(bot, chat_id, message_id):
         await bot.delete_message(chat_id, message_id)
     except:
         pass
+
+
+def reset_edit_session(context):
+    context.user_data["editing_session_active"] = False
+    context.user_data["editing_field"] = None
+    context.user_data["edit_prompt_id"] = None
+    context.user_data["lyrics_buffer"] = []
+    context.user_data["lyrics_message_ids"] = []
+
+
+async def finalize_lyrics(update, context, source="callback"):
+    query = update.callback_query if source == "callback" else None
+
+    if context.user_data.get("editing_field") != "lyrics":
+        if query:
+            await query.answer("Not in lyrics editing mode", show_alert=True)
+        return False
+
+    last_data = context.user_data.get("last_telegraph_data")
+    if not last_data:
+        if query:
+            await query.answer("No song data found", show_alert=True)
+        return False
+
+    lyrics_parts = context.user_data.get("lyrics_buffer", [])
+    if not lyrics_parts:
+        if query:
+            await query.answer("No lyrics to save", show_alert=True)
+        return False
+
+    if context.user_data.get("lyrics_finalizing"):
+        if query:
+            await query.answer("Already finalizing...", show_alert=True)
+        return False
+
+    context.user_data["lyrics_finalizing"] = True
+
+    if query:
+        await query.answer()
+
+    full_lyrics = "\n".join(lyrics_parts)
+    context.user_data["current_lyrics"] = full_lyrics
+
+    chat_id = update.effective_chat.id
+
+    for msg_id in context.user_data.get("lyrics_message_ids", []):
+        try:
+            await context.bot.delete_message(chat_id, msg_id)
+        except:
+            pass
+
+    prompt_id = context.user_data.get("edit_prompt_id")
+    if prompt_id:
+        try:
+            await context.bot.delete_message(chat_id, prompt_id)
+        except:
+            pass
+
+    try:
+        await asyncio.to_thread(edit_song_page, last_data, full_lyrics)
+    except Exception:
+        reset_edit_session(context)
+        context.user_data["lyrics_finalizing"] = False
+        if query:
+            await query.edit_message_text("❌ Failed to update Telegraph page")
+            asyncio.create_task(_safe_delete(context.bot, chat_id, query.message.message_id))
+        else:
+            msg = await context.bot.send_message(chat_id=chat_id, text="❌ Failed to update Telegraph page")
+            asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, 4))
+        return False
+
+    reset_edit_session(context)
+    context.user_data["lyrics_finalizing"] = False
+
+    if query:
+        await query.edit_message_text("✅ Lyrics Updated")
+        asyncio.create_task(_safe_delete(context.bot, chat_id, query.message.message_id))
+    else:
+        msg = await context.bot.send_message(chat_id=chat_id, text="✅ Lyrics Updated")
+        asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, 4))
+
+    return True
 
 
 async def handle_audio_decision_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -44,12 +129,10 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
     artist = decision.get("artist", "")
     chat_id = query.message.chat_id
 
-    # Always clear the pending decision
     context.user_data["pending_audio_decision"] = None
 
-    # Delete the menu prompt message
     try:
-        await query.delete_message()
+        await context.bot.delete_message(chat_id, query.message.message_id)
     except:
         pass
 
@@ -73,10 +156,9 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
         caption = f'>`{track_name_md} — {artist_name_md}`{hidden_link}'
 
         try:
-            await context.bot.copy_message(
+            await context.bot.send_audio(
                 chat_id=chat_id,
-                from_chat_id=chat_id,
-                message_id=message_id,
+                audio=file_id,
                 caption=caption,
                 parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=button,
@@ -94,8 +176,8 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
         user_channels = await get_user_channels(update.effective_user.id)
         if user_channels:
             channel_buttons = [
-                [InlineKeyboardButton(title, callback_data=f"send_channel_{cid}")]
-                for cid, title in user_channels.items()
+                [InlineKeyboardButton(ch_title, callback_data=f"send_channel_{cid}")]
+                for cid, ch_title in user_channels.items()
             ]
             prompt = await context.bot.send_message(
                 chat_id=chat_id,
@@ -202,6 +284,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
     # Must be in active edit session
     if not context.user_data.get("editing_session_active"):
+        logger.debug("Ignored message: not in edit session")
         return
 
     field = context.user_data.get("editing_field")
@@ -301,17 +384,12 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
     try:
         await asyncio.to_thread(edit_song_page, last_data, lyrics)
     except Exception:
-        context.user_data["editing_session_active"] = False
-        context.user_data["editing_field"] = None
-        context.user_data["edit_prompt_id"] = None
+        reset_edit_session(context)
         msg = await update.effective_chat.send_message("❌ Failed to update Telegraph page")
         asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
         return
 
-    # Reset session
-    context.user_data["editing_session_active"] = False
-    context.user_data["editing_field"] = None
-    context.user_data["edit_prompt_id"] = None
+    reset_edit_session(context)
 
     msg = await update.effective_chat.send_message("✅ Updated")
     asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
@@ -348,14 +426,7 @@ async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             except:
                 pass
 
-        # Clear buffers
-        context.user_data["lyrics_buffer"] = []
-        context.user_data["lyrics_message_ids"] = []
-
-    # Reset session
-    context.user_data["editing_session_active"] = False
-    context.user_data["editing_field"] = None
-    context.user_data["edit_prompt_id"] = None
+    reset_edit_session(context)
 
     # Temporary confirmation
     msg = await update.effective_chat.send_message("❌ Edit cancelled")
@@ -367,63 +438,13 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not context.user_data.get("editing_session_active"):
         return
 
-    if context.user_data.get("editing_field") != "lyrics":
-        return
-
     # Delete /done message
     try:
         await update.message.delete()
     except:
         pass
 
-    last_data = context.user_data.get("last_telegraph_data")
-    if not last_data:
-        return
-
-    lyrics_parts = context.user_data.get("lyrics_buffer", [])
-    if not lyrics_parts:
-        return
-
-    full_lyrics = "\n".join(lyrics_parts)
-    context.user_data["current_lyrics"] = full_lyrics
-
-    # Delete all lyric messages
-    for msg_id in context.user_data.get("lyrics_message_ids", []):
-        try:
-            await context.bot.delete_message(update.effective_chat.id, msg_id)
-        except:
-            pass
-
-    # Delete prompt
-    prompt_id = context.user_data.get("edit_prompt_id")
-    if prompt_id:
-        try:
-            await context.bot.delete_message(update.effective_chat.id, prompt_id)
-        except:
-            pass
-
-    # Update Telegraph
-    try:
-        await asyncio.to_thread(edit_song_page, last_data, full_lyrics)
-    except Exception:
-        context.user_data["editing_session_active"] = False
-        context.user_data["editing_field"] = None
-        context.user_data["edit_prompt_id"] = None
-        context.user_data["lyrics_buffer"] = []
-        context.user_data["lyrics_message_ids"] = []
-        msg = await update.effective_chat.send_message("❌ Failed to update Telegraph page")
-        asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 4))
-        return
-
-    # Reset session
-    context.user_data["editing_session_active"] = False
-    context.user_data["editing_field"] = None
-    context.user_data["edit_prompt_id"] = None
-    context.user_data["lyrics_buffer"] = []
-    context.user_data["lyrics_message_ids"] = []
-
-    msg = await update.effective_chat.send_message("✅ Lyrics Updated")
-    asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 4))
+    await finalize_lyrics(update, context, source="message")
 
 
 async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -435,7 +456,6 @@ async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFA
 
     await query.answer()
 
-    # If we were editing lyrics, delete all collected lyric messages
     if context.user_data.get("editing_field") == "lyrics":
         for msg_id in context.user_data.get("lyrics_message_ids", []):
             try:
@@ -443,13 +463,7 @@ async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFA
             except:
                 pass
 
-        context.user_data["lyrics_buffer"] = []
-        context.user_data["lyrics_message_ids"] = []
-
-    # Reset session
-    context.user_data["editing_session_active"] = False
-    context.user_data["editing_field"] = None
-    context.user_data["edit_prompt_id"] = None
+    reset_edit_session(context)
 
     try:
         await query.edit_message_text("❌ Edit cancelled")
@@ -465,54 +479,7 @@ async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFA
         await query.answer("No active edit session", show_alert=True)
         return
 
-    if context.user_data.get("editing_field") != "lyrics":
-        await query.answer("Not in lyrics editing mode", show_alert=True)
-        return
-
-    last_data = context.user_data.get("last_telegraph_data")
-    if not last_data:
-        await query.answer("No song data found", show_alert=True)
-        return
-
-    lyrics_parts = context.user_data.get("lyrics_buffer", [])
-    if not lyrics_parts:
-        await query.answer("No lyrics to save", show_alert=True)
-        return
-
-    await query.answer()
-
-    full_lyrics = "\n".join(lyrics_parts)
-    context.user_data["current_lyrics"] = full_lyrics
-
-    # Delete all lyric messages
-    for msg_id in context.user_data.get("lyrics_message_ids", []):
-        try:
-            await context.bot.delete_message(update.effective_chat.id, msg_id)
-        except:
-            pass
-
-    # Update Telegraph
-    try:
-        await asyncio.to_thread(edit_song_page, last_data, full_lyrics)
-    except Exception:
-        await query.edit_message_text("❌ Failed to update Telegraph page")
-        context.user_data["editing_session_active"] = False
-        context.user_data["editing_field"] = None
-        context.user_data["edit_prompt_id"] = None
-        context.user_data["lyrics_buffer"] = []
-        context.user_data["lyrics_message_ids"] = []
-        asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
-        return
-
-    # Reset session
-    context.user_data["editing_session_active"] = False
-    context.user_data["editing_field"] = None
-    context.user_data["edit_prompt_id"] = None
-    context.user_data["lyrics_buffer"] = []
-    context.user_data["lyrics_message_ids"] = []
-
-    await query.edit_message_text("✅ Lyrics Updated")
-    asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
+    await finalize_lyrics(update, context, source="callback")
 
 
 # Build buttons

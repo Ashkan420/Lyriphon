@@ -49,7 +49,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegraph_url = context.user_data.get("last_telegraph")
     last_data = context.user_data.get("last_telegraph_data")
 
-    if telegraph_url and last_data and not context.user_data.get("pending_audio"):
+    if telegraph_url and last_data and not context.user_data.get("pending_audio") and not context.user_data.get("editing_session_active"):
         # Store audio info for the decision callback
         context.user_data["pending_audio_decision"] = {
             "file_id": music_msg.audio.file_id if music_msg.audio else None,
