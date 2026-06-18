@@ -52,6 +52,8 @@ def build_track_buttons(results, page: int = 0):
 
 async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /song command with paginated results."""
+    context.user_data["pending_audio"] = None
+
     prompt_id = context.user_data.get("send_channel_prompt_id")
     if prompt_id:
         try:

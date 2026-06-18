@@ -5,6 +5,7 @@ from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph, edit_song_page
 from telegram.constants import ParseMode
 from services.url_validation import is_valid_url
+from handlers.escape_md import escape_md
 import asyncio
 
 
@@ -198,6 +199,10 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    # Clear pending audio session if active
+    if context.user_data.get("pending_audio"):
+        context.user_data["pending_audio"] = None
 
     if not context.user_data.get("editing_session_active"):
         return
@@ -545,8 +550,84 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["last_artist_name"] = artist_name
     context.user_data["last_telegraph_data"] = last_data
 
-    
+    # Check if there's a pending audio to auto-attach
+    pending_audio = context.user_data.get("pending_audio")
+    if pending_audio and pending_audio.get("file_id"):
+        # Auto-attach the audio
+        file_id = pending_audio["file_id"]
+        message_id = pending_audio.get("message_id")
 
+        # Create caption with telegraph link
+        track_name_md = escape_md(track_name)
+        artist_name_md = escape_md(artist_name)
+        hidden_link = f"[‎]({telegraph_url})"
+        caption = f'>`{track_name_md} — {artist_name_md}`{hidden_link}'
+
+        # Send audio with telegraph button
+        button = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
+        )
+
+        await context.bot.send_audio(
+            chat_id=query.message.chat_id,
+            audio=file_id,
+            caption=caption,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=button
+        )
+
+        # Store for channel sending
+        context.user_data["pending_audio_file_id"] = file_id
+        context.user_data["pending_caption"] = caption
+        context.user_data["pending_telegraph_url"] = telegraph_url
+
+        # Delete the original audio message
+        if message_id:
+            try:
+                await context.bot.delete_message(
+                    chat_id=query.message.chat_id,
+                    message_id=message_id
+                )
+            except:
+                pass
+
+        # Clear pending audio and telegraph state
+        context.user_data["pending_audio"] = None
+        context.user_data["last_telegraph"] = None
+        context.user_data["last_telegraph_data"] = None
+
+        # Ask which channel to send to
+        from db import get_user_channels
+        user_channels = await get_user_channels(update.effective_user.id)
+        if user_channels:
+            channel_buttons = [
+                [InlineKeyboardButton(title, callback_data=f"send_channel_{chat_id}")]
+                for chat_id, title in user_channels.items()
+            ]
+            prompt = await query.message.reply_text(
+                "Send to which channel?",
+                reply_markup=InlineKeyboardMarkup(channel_buttons)
+            )
+            context.user_data["send_channel_prompt_id"] = prompt.message_id
+
+        # Edit the search message to show success
+        reply_markup = build_edit_menu()
+        await query.edit_message_text(
+            f"✅ <b>Telegraph Created & Audio Attached</b>\n\n"
+            f"<blockquote>"
+            f"🎵 <b>{track_name}</b>\n"
+            f"👤 {artist_name}\n"
+            f"💽 {album_name}\n"
+            f"📅 {release_date}"
+            f"</blockquote>\n\n"
+            f"👇 Edit options below — or tap to open the page:\n"
+            f'<a href="{telegraph_url}">📖 Open Telegraph Page</a>',
+            parse_mode="HTML",
+            reply_markup=reply_markup
+        )
+        return
+
+    # No pending audio - show normal message
     reply_markup = build_edit_menu()
 
     await query.edit_message_text(
