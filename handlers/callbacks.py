@@ -1,11 +1,12 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-from services.deezer_api import get_track, get_album
+from services.deezer_api import get_track, get_album, search_tracks
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph, edit_song_page
 from telegram.constants import ParseMode
 from services.url_validation import is_valid_url
 from handlers.escape_md import escape_md
+from handlers.song_search import build_track_buttons
 import asyncio
 
 
@@ -22,6 +23,124 @@ async def _safe_delete(bot, chat_id, message_id):
         await bot.delete_message(chat_id, message_id)
     except:
         pass
+
+
+async def handle_audio_decision_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    decision = context.user_data.get("pending_audio_decision")
+    if not decision:
+        try:
+            await query.edit_message_text("❌ This selection has expired.")
+        except:
+            pass
+        return
+
+    file_id = decision.get("file_id")
+    message_id = decision.get("message_id")
+    title = decision.get("title", "")
+    artist = decision.get("artist", "")
+    chat_id = query.message.chat_id
+
+    # Always clear the pending decision
+    context.user_data["pending_audio_decision"] = None
+
+    # Delete the menu prompt message
+    try:
+        await query.delete_message()
+    except:
+        pass
+
+    if data == "audio_decision_attach":
+        telegraph_url = context.user_data.get("last_telegraph")
+        last_data = context.user_data.get("last_telegraph_data")
+        if not telegraph_url or not last_data:
+            await context.bot.send_message(chat_id=chat_id, text="❌ Telegraph expired. Send /song to create a new one.")
+            return
+
+        track_name = last_data.get("track", "Unknown Track")
+        artist_name = last_data.get("artist", "Unknown Artist")
+
+        track_name_md = escape_md(track_name)
+        artist_name_md = escape_md(artist_name)
+
+        button = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
+        )
+        hidden_link = f"[‎]({telegraph_url})"
+        caption = f'>`{track_name_md} — {artist_name_md}`{hidden_link}'
+
+        try:
+            await context.bot.copy_message(
+                chat_id=chat_id,
+                from_chat_id=chat_id,
+                message_id=message_id,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=button,
+            )
+        except Exception:
+            await context.bot.send_message(chat_id=chat_id, text="❌ Failed to attach audio.")
+            return
+
+        if file_id:
+            context.user_data["pending_audio_file_id"] = file_id
+            context.user_data["pending_caption"] = caption
+            context.user_data["pending_telegraph_url"] = telegraph_url
+
+        from db import get_user_channels
+        user_channels = await get_user_channels(update.effective_user.id)
+        if user_channels:
+            channel_buttons = [
+                [InlineKeyboardButton(title, callback_data=f"send_channel_{cid}")]
+                for cid, title in user_channels.items()
+            ]
+            prompt = await context.bot.send_message(
+                chat_id=chat_id,
+                text="Send to which channel?",
+                reply_markup=InlineKeyboardMarkup(channel_buttons)
+            )
+            context.user_data["send_channel_prompt_id"] = prompt.message_id
+
+        context.user_data["last_telegraph"] = None
+
+    elif data == "audio_decision_search":
+        context.user_data["pending_audio"] = {
+            "file_id": file_id,
+            "title": title,
+            "artist": artist,
+            "mode": "auto_audio_flow",
+            "message_id": message_id,
+        }
+
+        search_query = f"{artist} {title}".strip()
+        results = await search_tracks(search_query)
+
+        if results is None:
+            await context.bot.send_message(chat_id=chat_id, text="❌ Search failed. Try again later.")
+            context.user_data["pending_audio"] = None
+            return
+
+        if not results:
+            await context.bot.send_message(chat_id=chat_id, text="❌ No results found.")
+            context.user_data["pending_audio"] = None
+            return
+
+        context.user_data["song_search_results"] = results
+        context.user_data["song_search_page"] = 0
+
+        buttons = build_track_buttons(results, page=0)
+        match_text = f"{artist} - {title}" if artist else title
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🎵 Found matches for: {match_text}\nSelect the track:",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+    elif data == "audio_decision_cancel":
+        await context.bot.send_message(chat_id=chat_id, text="❌ Cancelled.")
 
 
 async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -440,6 +559,7 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
 
     if not audio_file_id or not telegraph_url or not caption:
         await query.edit_message_text("❌ Nothing to send.")
+        context.user_data["send_channel_prompt_id"] = None
         return
 
     # check if user is admin in that channel
@@ -485,6 +605,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     track_id = int(data.replace("track_", ""))
+
+    # Clear stale search results
+    context.user_data["song_search_results"] = None
+    context.user_data["song_search_page"] = None
 
     await query.edit_message_text("⏳ Fetching track info...")
 
@@ -569,13 +693,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
         )
 
-        await context.bot.send_audio(
-            chat_id=query.message.chat_id,
-            audio=file_id,
-            caption=caption,
-            parse_mode=ParseMode.MARKDOWN_V2,
-            reply_markup=button
-        )
+        try:
+            await context.bot.send_audio(
+                chat_id=query.message.chat_id,
+                audio=file_id,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=button
+            )
+        except Exception:
+            await query.edit_message_text("❌ Failed to attach audio. Try again.")
+            context.user_data["pending_audio"] = None
+            return
 
         # Store for channel sending
         context.user_data["pending_audio_file_id"] = file_id
@@ -595,7 +724,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Clear pending audio and telegraph state
         context.user_data["pending_audio"] = None
         context.user_data["last_telegraph"] = None
-        context.user_data["last_telegraph_data"] = None
 
         # Ask which channel to send to
         from db import get_user_channels
