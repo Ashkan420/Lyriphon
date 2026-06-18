@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
-from core.session import get_session, set_mode, in_mode, SessionMode
+from core.session import get_session, in_mode, transition, SessionMode
 
 PAGE_SIZE = 5
 
@@ -49,18 +49,22 @@ def build_track_buttons(results, page: int = 0):
 async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = get_session(context)
 
-    session["audio"]["file_id"] = None
-    session["audio"]["title"] = None
-    session["audio"]["artist"] = None
-    session["audio"]["message_id"] = None
+    # Clear search audio
+    session.audio.file_id = None
+    session.audio.title = None
+    session.audio.artist = None
+    session.audio.message_id = None
 
-    prompt_id = session["audio"]["send_channel_prompt_id"]
-    if prompt_id:
+    # Clear pending channel prompt
+    if session.audio.send_channel_prompt_id:
         try:
-            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=prompt_id)
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=session.audio.send_channel_prompt_id
+            )
         except:
             pass
-        session["audio"]["send_channel_prompt_id"] = None
+        session.audio.send_channel_prompt_id = None
 
     if not context.args:
         await update.message.reply_text("❌ Usage: /song <track name>")
@@ -77,9 +81,9 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ No results found.")
         return
 
-    session["search"]["results"] = results
-    session["search"]["page"] = 0
-    set_mode(session, SessionMode.SEARCH)
+    session.search.results = results
+    session.search.page = 0
+    await transition(session, SessionMode.SEARCH, context.bot, update.effective_chat.id)
 
     buttons = build_track_buttons(results, page=0)
 
@@ -99,13 +103,13 @@ async def handle_search_page_callback(update: Update, context: ContextTypes.DEFA
         return
 
     page = int(data.replace("search_page_", ""))
-    results = session["search"]["results"]
+    results = session.search.results
 
     if not results:
         await query.edit_message_text("❌ Search expired. Try again with /song.")
         return
 
-    session["search"]["page"] = page
+    session.search.page = page
     buttons = build_track_buttons(results, page=page)
 
     await query.edit_message_text(

@@ -1,19 +1,22 @@
 from telegram import Update
 from telegram.ext import ContextTypes
+from core.session import reset_session
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reset_session(context)  # Full reset is ONLY allowed here
     user = update.effective_user
     name = user.first_name if user else "there"
-    
+
     welcome_text = (
         f"Hello {name}!\n\n"
         "I'm your Lyrics & Telegraph bot. Here's what I can do:\n"
-        "• Send song lyrics via /song\n"
-        "• Attach lyrics to music files automatically\n"
-        "• Create Telegraph pages for tracks\n\n"
+        "- Send song lyrics via /song\n"
+        "- Attach lyrics to music files automatically\n"
+        "- Create Telegraph pages for tracks\n\n"
         "Type /help for a full list of commands."
     )
-    
+
     await update.message.reply_text(welcome_text)
 
 
@@ -30,5 +33,5 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Inline mode:\n"
         "Type @lyriphon_bot in any chat to search directly."
     )
-    
+
     await update.message.reply_text(help_text)
