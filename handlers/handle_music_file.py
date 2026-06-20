@@ -2,12 +2,14 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
 from handlers.song_search import build_track_buttons
+from handlers.telegram_utils import search_and_show_results
 from core.session import get_session, in_mode, transition, SessionMode
 
 
 async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     music_msg = update.message
     session = get_session(context)
+    chat_id = update.effective_chat.id
 
     if music_msg.media_group_id:
         await update.message.reply_text(
@@ -49,7 +51,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "title": title,
             "artist": artist,
         }
-        await transition(session, SessionMode.AUDIO_DECISION, context.bot, update.effective_chat.id)
+        await transition(session, SessionMode.AUDIO_DECISION, context.bot, chat_id)
 
         decision_buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("📎 Attach to Current Telegraph", callback_data="audio_decision_attach")],
@@ -58,7 +60,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
         await context.bot.send_message(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,
             text="🎵 What would you like to do with this file?",
             reply_markup=decision_buttons,
         )
@@ -73,32 +75,15 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session.audio.message_id = music_msg.message_id
 
     search_query = f"{artist} {title}".strip()
-    results = await search_tracks(search_query)
-
-    if results is None:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="❌ Search failed. Try again later."
-        )
-        session.audio.file_id = None
-        return
-
-    if not results:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="❌ No results found."
-        )
-        session.audio.file_id = None
-        return
-
-    session.search.results = results
-    session.search.page = 0
-    await transition(session, SessionMode.SEARCH, context.bot, update.effective_chat.id)
-
-    buttons = build_track_buttons(results, page=0)
-
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=f"🎵 Found matches for: {artist} - {title}\nSelect the track:" if artist else f"Found matches for: {title}\nSelect the track:",
-        reply_markup=InlineKeyboardMarkup(buttons)
+    display_label = f"{artist} - {title}" if artist else title
+    ok = await search_and_show_results(
+        bot=context.bot,
+        chat_id=chat_id,
+        session=session,
+        search_query=search_query,
+        display_label=display_label,
+        build_track_buttons=build_track_buttons,
+        search_tracks=search_tracks,
     )
+    if not ok:
+        session.audio.file_id = None

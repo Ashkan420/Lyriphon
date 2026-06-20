@@ -2,8 +2,7 @@ from telegraph import Telegraph
 from config import TELEGRAPH_ACCESS_TOKEN, CHANNEL_LINK, DEEZLOAD_BOT
 from services.url_validation import _is_valid_image_url, _safe_link
 from services.lyrics_formatter import format_lyrics_for_telegraph
-import time
-import random
+from services.retry import retry_sync
 
 telegraph = Telegraph(access_token=TELEGRAPH_ACCESS_TOKEN)
 
@@ -43,22 +42,16 @@ def create_song_telegraph(
         formatted_lyrics
     )
 
-    attempt = 0
-    while attempt <= retries:
-        try:
-            response = telegraph.create_page(
-                title=track,
-                author_name=author_name,
-                author_url=CHANNEL_LINK,
-                html_content=html_content
-            )
-            break
-        except Exception:
-            attempt += 1
-            if attempt <= retries:
-                time.sleep(delay * (2 ** attempt) + random.random())
-            else:
-                raise
+    response = retry_sync(
+        lambda: telegraph.create_page(
+            title=track,
+            author_name=author_name,
+            author_url=CHANNEL_LINK,
+            html_content=html_content,
+        ),
+        retries=retries,
+        delay=delay,
+    )
 
     url = "https://telegra.ph/" + response["path"]
     path = response["path"]
@@ -95,23 +88,17 @@ def edit_song_page(last_data: dict, lyrics: str, retries: int = 2, delay: float 
         formatted_lyrics=formatted_lyrics
     )
 
-    attempt = 0
-    while attempt <= retries:
-        try:
-            telegraph.edit_page(
-                path=last_data["path"],
-                title=last_data["track"],
-                html_content=html_content,
-                author_name=last_data["author_name"],
-                author_url=CHANNEL_LINK
-            )
-            break
-        except Exception:
-            attempt += 1
-            if attempt <= retries:
-                time.sleep(delay * (2 ** attempt) + random.random())
-            else:
-                raise
+    retry_sync(
+        lambda: telegraph.edit_page(
+            path=last_data["path"],
+            title=last_data["track"],
+            html_content=html_content,
+            author_name=last_data["author_name"],
+            author_url=CHANNEL_LINK,
+        ),
+        retries=retries,
+        delay=delay,
+    )
 
 
 def _build_html_page(
