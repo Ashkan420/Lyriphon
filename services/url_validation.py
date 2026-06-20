@@ -1,11 +1,15 @@
 import re
+import logging
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 def is_valid_url(url: str) -> bool:
     try:
         result = urlparse(url)
         return result.scheme in ("http", "https") and bool(result.netloc)
-    except:
+    except ValueError:
+        logger.debug("URL validation failed for: %s", url)
         return False
 
 def _is_valid_image_url(url: str) -> bool:

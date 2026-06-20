@@ -21,15 +21,15 @@ async def _delayed_delete(bot, chat_id, message_id, delay):
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id, message_id)
-    except:
-        pass
+    except Exception:
+        logger.debug("Failed to delete message %s in chat %s (delayed)", message_id, chat_id)
 
 
 async def _safe_delete(bot, chat_id, message_id):
     try:
         await bot.delete_message(chat_id, message_id)
-    except:
-        pass
+    except Exception:
+        logger.debug("Failed to delete message %s in chat %s", message_id, chat_id)
 
 
 async def finalize_lyrics(update, context, source="callback"):
@@ -76,22 +76,21 @@ async def finalize_lyrics(update, context, source="callback"):
     for msg_id in session.lyrics.message_ids:
         try:
             await context.bot.delete_message(chat_id, msg_id)
-        except:
-            pass
+        except Exception:
+            logger.debug("Failed to delete lyrics message %s", msg_id)
 
     # Delete prompt
     if session.edit.prompt_id:
         try:
             await context.bot.delete_message(chat_id, session.edit.prompt_id)
-        except:
-            pass
+        except Exception:
+            logger.debug("Failed to delete edit prompt %s", session.edit.prompt_id)
 
     try:
         await asyncio.to_thread(edit_song_page, last_data, full_lyrics)
     except Exception:
-        # Stale check not needed here — we're aborting anyway
+        logger.exception("Failed to update Telegraph page during lyrics finalization")
         session.lyrics.lock = False
-        # Transition hooks delete messages, handler owns reset
         await transition(session, SessionMode.IDLE, context.bot, chat_id)
         reset_flow(session.lyrics)
         reset_flow(session.edit)
@@ -139,8 +138,8 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
     if not decision:
         try:
             await query.edit_message_text("❌ This selection has expired.")
-        except:
-            pass
+        except Exception:
+            logger.debug("Failed to edit expired decision message")
         return
 
     file_id = decision.get("file_id")
@@ -153,8 +152,8 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
 
     try:
         await context.bot.delete_message(chat_id, query.message.message_id)
-    except:
-        pass
+    except Exception:
+        logger.debug("Failed to delete audio decision prompt")
 
     if data == "audio_decision_attach":
         telegraph_url = session.telegraph.url
@@ -336,8 +335,8 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
         if prompt_id:
             try:
                 await context.bot.delete_message(update.effective_chat.id, prompt_id)
-            except:
-                pass
+            except Exception:
+                logger.debug("Failed to delete lyrics prompt %s", prompt_id)
 
         done_cancel_buttons = [
             [InlineKeyboardButton("✅ Done", callback_data="done_lyrics")],
@@ -358,14 +357,14 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
     try:
         await update.message.delete()
-    except:
-        pass
+    except Exception:
+        logger.debug("Failed to delete user's field value message")
     prompt_id = session.edit.prompt_id
     if prompt_id:
         try:
             await context.bot.delete_message(update.effective_chat.id, prompt_id)
-        except:
-            pass
+        except Exception:
+            logger.debug("Failed to delete edit prompt %s", prompt_id)
 
     url_fields = ["track_link", "artist_link", "album_link", "cover"]
 
@@ -402,7 +401,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
     try:
         await asyncio.to_thread(edit_song_page, last_data, lyrics)
     except Exception:
-        # Transition hooks delete messages, handler owns reset
+        logger.exception("Failed to update Telegraph page for field '%s'", field)
         await transition(session, SessionMode.IDLE, context.bot, update.effective_chat.id)
         reset_flow(session.edit)
         msg = await update.effective_chat.send_message("❌ Failed to update Telegraph page")
@@ -423,8 +422,8 @@ async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS):
         try:
             await update.message.delete()
-        except:
-            pass
+        except Exception:
+            logger.debug("Failed to delete /cancel command message")
 
         # Transition hooks delete messages
         await transition(session, SessionMode.IDLE, context.bot, update.effective_chat.id)
@@ -453,8 +452,8 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         await update.message.delete()
-    except:
-        pass
+    except Exception:
+        logger.debug("Failed to delete /done command message")
 
     await finalize_lyrics(update, context, source="message")
 
@@ -478,8 +477,8 @@ async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFA
 
     try:
         await query.edit_message_text("❌ Edit cancelled")
-    except:
-        pass
+    except Exception:
+        logger.debug("Failed to edit cancel message")
     asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
 
 
@@ -545,7 +544,8 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
         if member.status not in ["administrator", "creator"]:
             await query.answer("❌ You are not an admin in this channel.", show_alert=True)
             return
-    except:
+    except Exception:
+        logger.warning("Failed to verify admin status for channel %s", channel_id)
         await query.answer("❌ Can't access this channel.", show_alert=True)
         return
 
@@ -553,13 +553,18 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
         [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
     )
 
-    await context.bot.send_audio(
-        chat_id=channel_id,
-        audio=audio_file_id,
-        caption=caption,
-        parse_mode=ParseMode.MARKDOWN_V2,
-        reply_markup=button
-    )
+    try:
+        await context.bot.send_audio(
+            chat_id=channel_id,
+            audio=audio_file_id,
+            caption=caption,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=button
+        )
+    except Exception:
+        logger.exception("Failed to send audio to channel %s", channel_id)
+        await query.edit_message_text("❌ Failed to send to channel.")
+        return
 
     await query.edit_message_text("✅ Sent to channel!")
     asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
@@ -623,19 +628,24 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text("⏳ Creating Telegraph page...")
 
-    telegraph_url, telegraph_path, last_data = await asyncio.to_thread(
-        create_song_telegraph,
-        author_name=author_name,
-        track=track_name,
-        track_id=track_id,
-        artist=artist_name,
-        artist_id=artist_id,
-        album=album_name,
-        album_id=album_id,
-        album_cover_url=album_cover_url,
-        release_date=release_date,
-        lyrics=lyrics
-    )
+    try:
+        telegraph_url, telegraph_path, last_data = await asyncio.to_thread(
+            create_song_telegraph,
+            author_name=author_name,
+            track=track_name,
+            track_id=track_id,
+            artist=artist_name,
+            artist_id=artist_id,
+            album=album_name,
+            album_id=album_id,
+            album_cover_url=album_cover_url,
+            release_date=release_date,
+            lyrics=lyrics
+        )
+    except Exception:
+        logger.exception("Failed to create Telegraph page for track '%s'", track_name)
+        await query.edit_message_text("❌ Failed to create Telegraph page. Try again later.")
+        return
 
     # VERSION CHECK: after long async work, BEFORE committing state
     if is_stale(session, my_version):
@@ -683,8 +693,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=query.message.chat_id,
                     message_id=pending_message_id
                 )
-            except:
-                pass
+            except Exception:
+                logger.debug("Failed to delete original audio message %s", pending_message_id)
 
         session.audio.file_id = None
         session.audio.title = None
