@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
 from handlers.song_search import build_track_buttons
-from handlers.telegram_utils import search_and_show_results
+from utils.telegram import search_and_show_results
 from core.session import get_session, in_mode, transition, SessionMode
 
 

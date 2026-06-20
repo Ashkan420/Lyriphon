@@ -1,5 +1,5 @@
 import httpx
-from services.retry import retry_async
+from utils.retry import retry_async
 
 LRCLIB_SEARCH = "https://lrclib.net/api/search"
 

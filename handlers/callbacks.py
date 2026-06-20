@@ -4,10 +4,10 @@ from services.deezer_api import get_track, get_album, search_tracks
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph, edit_song_page
 from telegram.constants import ParseMode
-from services.url_validation import is_valid_url
-from handlers.escape_md import escape_md
+from utils.url_validation import is_valid_url
+from utils.escape_md import escape_md
 from handlers.song_search import build_track_buttons
-from handlers.telegram_utils import (
+from utils.telegram import (
     safe_delete, delayed_delete, cancel_edit,
     search_and_show_results, attach_audio_and_prompt_channel,
 )

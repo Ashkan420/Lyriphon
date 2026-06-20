@@ -1,8 +1,8 @@
 from telegraph import Telegraph
 from config import TELEGRAPH_ACCESS_TOKEN, CHANNEL_LINK, DEEZLOAD_BOT
-from services.url_validation import _is_valid_image_url, _safe_link
+from utils.url_validation import _is_valid_image_url, _safe_link
 from services.lyrics_formatter import format_lyrics_for_telegraph
-from services.retry import retry_sync
+from utils.retry import retry_sync
 
 telegraph = Telegraph(access_token=TELEGRAPH_ACCESS_TOKEN)
 

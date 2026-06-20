@@ -3,7 +3,7 @@ import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
-from handlers.escape_md import escape_md
+from utils.escape_md import escape_md
 from core.session import get_session, reset_flow, transition, SessionMode
 from db import get_user_channels
 

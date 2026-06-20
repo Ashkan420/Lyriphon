@@ -2,7 +2,7 @@ from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, 
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from services.deezer_api import search_tracks
-from handlers.telegram_utils import format_duration
+from utils.telegram import format_duration
 
 
 async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
