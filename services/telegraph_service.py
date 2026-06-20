@@ -1,9 +1,11 @@
+import html
+import time
+import random
+
 from telegraph import Telegraph
 from config import TELEGRAPH_ACCESS_TOKEN, CHANNEL_LINK, DEEZLOAD_BOT
 from services.url_validation import _is_valid_image_url, _safe_link
 from services.lyrics_formatter import format_lyrics_for_telegraph
-import time
-import random
 
 telegraph = Telegraph(access_token=TELEGRAPH_ACCESS_TOKEN)
 
@@ -135,11 +137,12 @@ def _build_html_page(
     artist_html = _safe_link(artist, artist_link)
     album_html = _safe_link(album, album_link)
 
-    # Remove empty metadata lines
+    safe_date = html.escape(str(release_date)) if release_date else ""
+
     track_section = f'<p><strong>🎧 Track:</strong> {track_html}</p>' if track else ""
     artist_section = f'<p><strong>👤 Artist:</strong> {artist_html}</p>' if artist else ""
     album_section = f'<p><strong>💽 Album:</strong> {album_html}</p>' if album else ""
-    date_section = f'<p><strong>📅 Date:</strong> {release_date}</p>' if release_date else ""
+    date_section = f'<p><strong>📅 Date:</strong> {safe_date}</p>' if release_date else ""
 
     return f"""
 {cover_html}

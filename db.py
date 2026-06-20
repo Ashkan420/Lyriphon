@@ -6,6 +6,8 @@ pool = None
 
 async def init_db():
     global pool
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is not set")
     pool = await asyncpg.create_pool(
         DATABASE_URL,
         ssl="require",

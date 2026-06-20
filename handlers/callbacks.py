@@ -21,14 +21,14 @@ async def _delayed_delete(bot, chat_id, message_id, delay):
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id, message_id)
-    except:
+    except Exception:
         pass
 
 
 async def _safe_delete(bot, chat_id, message_id):
     try:
         await bot.delete_message(chat_id, message_id)
-    except:
+    except Exception:
         pass
 
 
@@ -76,14 +76,14 @@ async def finalize_lyrics(update, context, source="callback"):
     for msg_id in session.lyrics.message_ids:
         try:
             await context.bot.delete_message(chat_id, msg_id)
-        except:
+        except Exception:
             pass
 
     # Delete prompt
     if session.edit.prompt_id:
         try:
             await context.bot.delete_message(chat_id, session.edit.prompt_id)
-        except:
+        except Exception:
             pass
 
     try:
@@ -139,7 +139,7 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
     if not decision:
         try:
             await query.edit_message_text("❌ This selection has expired.")
-        except:
+        except Exception:
             pass
         return
 
@@ -153,7 +153,7 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
 
     try:
         await context.bot.delete_message(chat_id, query.message.message_id)
-    except:
+    except Exception:
         pass
 
     if data == "audio_decision_attach":
@@ -336,7 +336,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
         if prompt_id:
             try:
                 await context.bot.delete_message(update.effective_chat.id, prompt_id)
-            except:
+            except Exception:
                 pass
 
         done_cancel_buttons = [
@@ -358,13 +358,13 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
     try:
         await update.message.delete()
-    except:
+    except Exception:
         pass
     prompt_id = session.edit.prompt_id
     if prompt_id:
         try:
             await context.bot.delete_message(update.effective_chat.id, prompt_id)
-        except:
+        except Exception:
             pass
 
     url_fields = ["track_link", "artist_link", "album_link", "cover"]
@@ -423,7 +423,7 @@ async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS):
         try:
             await update.message.delete()
-        except:
+        except Exception:
             pass
 
         # Transition hooks delete messages
@@ -453,7 +453,7 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         await update.message.delete()
-    except:
+    except Exception:
         pass
 
     await finalize_lyrics(update, context, source="message")
@@ -478,7 +478,7 @@ async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFA
 
     try:
         await query.edit_message_text("❌ Edit cancelled")
-    except:
+    except Exception:
         pass
     asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
 
@@ -529,7 +529,11 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
     if not data.startswith("send_channel_"):
         return
 
-    channel_id = int(data.replace("send_channel_", ""))
+    try:
+        channel_id = int(data.replace("send_channel_", ""))
+    except (ValueError, TypeError):
+        await query.edit_message_text("❌ Invalid channel selection.")
+        return
 
     audio_file_id = session.audio.pending_file_id
     caption = session.audio.pending_caption
@@ -545,7 +549,7 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
         if member.status not in ["administrator", "creator"]:
             await query.answer("❌ You are not an admin in this channel.", show_alert=True)
             return
-    except:
+    except Exception:
         await query.answer("❌ Can't access this channel.", show_alert=True)
         return
 
@@ -581,7 +585,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not data.startswith("track_"):
         return
 
-    track_id = int(data.replace("track_", ""))
+    try:
+        track_id = int(data.replace("track_", ""))
+    except (ValueError, TypeError):
+        await query.edit_message_text("❌ Invalid track selection.")
+        return
 
     session.search.results = None
     session.search.page = 0
@@ -683,7 +691,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=query.message.chat_id,
                     message_id=pending_message_id
                 )
-            except:
+            except Exception:
                 pass
 
         session.audio.file_id = None

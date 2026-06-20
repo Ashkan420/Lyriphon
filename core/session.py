@@ -184,13 +184,21 @@ on_exit_mode(SessionMode.EDIT_LYRICS, _cleanup_lyrics)
 
 
 async def session_debug_command(update, context):
+    from config import BOT_OWNER_ID
+    import html as html_module
+
+    user_id = str(update.effective_user.id) if update.effective_user else None
+    if BOT_OWNER_ID and user_id != BOT_OWNER_ID:
+        await update.message.reply_text("⛔ This command is restricted to the bot owner.")
+        return
+
     session = get_session(context)
     snap = session.snapshot()
-    lines = [f"Mode: {snap['mode']}", f"Version: {snap['version']}"]
+    lines = [f"Mode: {html_module.escape(str(snap['mode']))}", f"Version: {snap['version']}"]
     for flow_name in ["audio", "search", "edit", "lyrics", "telegraph"]:
         flow_snap = snap[flow_name]
         lock_str = " [LOCKED]" if flow_snap.pop("locked") else ""
-        lines.append(f"\n<b>{flow_name}</b>{lock_str}:")
+        lines.append(f"\n<b>{html_module.escape(flow_name)}</b>{lock_str}:")
         for k, v in flow_snap.items():
-            lines.append(f"  {k}: {v}")
+            lines.append(f"  {html_module.escape(str(k))}: {html_module.escape(str(v))}")
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")

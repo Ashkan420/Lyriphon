@@ -62,7 +62,7 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=update.effective_chat.id,
                 message_id=session.audio.send_channel_prompt_id
             )
-        except:
+        except Exception:
             pass
         session.audio.send_channel_prompt_id = None
 
@@ -102,7 +102,11 @@ async def handle_search_page_callback(update: Update, context: ContextTypes.DEFA
     if not data.startswith("search_page_"):
         return
 
-    page = int(data.replace("search_page_", ""))
+    try:
+        page = int(data.replace("search_page_", ""))
+    except (ValueError, TypeError):
+        await query.edit_message_text("❌ Invalid page.")
+        return
     results = session.search.results
 
     if not results:
