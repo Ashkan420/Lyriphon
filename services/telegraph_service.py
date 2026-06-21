@@ -6,6 +6,9 @@ from telegraph import Telegraph
 from config import TELEGRAPH_ACCESS_TOKEN, CHANNEL_LINK, DEEZLOAD_BOT
 from services.url_validation import _is_valid_image_url, _safe_link
 from services.lyrics_formatter import format_lyrics_for_telegraph
+import logging
+
+logger = logging.getLogger(__name__)
 
 telegraph = Telegraph(access_token=TELEGRAPH_ACCESS_TOKEN)
 
@@ -58,8 +61,13 @@ def create_song_telegraph(
         except Exception:
             attempt += 1
             if attempt <= retries:
+                logger.warning(
+                    "Telegraph create_page failed for '%s', retrying (%d/%d)",
+                    track, attempt, retries,
+                )
                 time.sleep(delay * (2 ** attempt) + random.random())
             else:
+                logger.exception("Telegraph create_page failed for '%s' after %d attempts", track, retries + 1)
                 raise
 
     url = "https://telegra.ph/" + response["path"]
@@ -111,8 +119,16 @@ def edit_song_page(last_data: dict, lyrics: str, retries: int = 2, delay: float 
         except Exception:
             attempt += 1
             if attempt <= retries:
+                logger.warning(
+                    "Telegraph edit_page failed for path '%s', retrying (%d/%d)",
+                    last_data["path"], attempt, retries,
+                )
                 time.sleep(delay * (2 ** attempt) + random.random())
             else:
+                logger.exception(
+                    "Telegraph edit_page failed for path '%s' after %d attempts",
+                    last_data["path"], retries + 1,
+                )
                 raise
 
 

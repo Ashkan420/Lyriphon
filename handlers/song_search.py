@@ -1,7 +1,10 @@
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
 from core.session import get_session, in_mode, transition, SessionMode
+
+logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 5
 
@@ -63,7 +66,7 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=session.audio.send_channel_prompt_id
             )
         except Exception:
-            pass
+            logger.debug("Failed to delete channel prompt %s", session.audio.send_channel_prompt_id)
         session.audio.send_channel_prompt_id = None
 
     if not context.args:

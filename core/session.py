@@ -160,8 +160,7 @@ async def _cleanup_edit(bot, chat_id, session: Session):
         try:
             await bot.delete_message(chat_id, session.edit.prompt_id)
         except Exception:
-            pass
-    # Hooks ONLY delete messages — handlers own the reset
+            logger.debug("Cleanup: failed to delete edit prompt %s", session.edit.prompt_id)
 
 
 async def _cleanup_lyrics(bot, chat_id, session: Session):
@@ -170,13 +169,12 @@ async def _cleanup_lyrics(bot, chat_id, session: Session):
             try:
                 await bot.delete_message(chat_id, msg_id)
             except Exception:
-                pass
+                logger.debug("Cleanup: failed to delete lyrics message %s", msg_id)
         if session.edit.prompt_id:
             try:
                 await bot.delete_message(chat_id, session.edit.prompt_id)
             except Exception:
-                pass
-    # Hooks ONLY delete messages — handlers own the reset
+                logger.debug("Cleanup: failed to delete edit prompt %s", session.edit.prompt_id)
 
 
 on_exit_mode(SessionMode.EDIT_FIELD, _cleanup_edit)

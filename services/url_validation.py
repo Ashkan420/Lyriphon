@@ -2,7 +2,11 @@ import html
 import ipaddress
 import re
 import socket
+import logging
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
+
 
 def _is_private_host(hostname: str) -> bool:
     try:
@@ -26,6 +30,7 @@ def is_valid_url(url: str) -> bool:
             return False
         return True
     except Exception:
+        logger.debug("URL validation failed for: %s", url)
         return False
 
 def _is_valid_image_url(url: str) -> bool:
