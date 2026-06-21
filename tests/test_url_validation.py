@@ -22,7 +22,10 @@ class TestIsValidUrl:
         assert is_valid_url("https://") is False
 
     def test_valid_with_port(self):
-        assert is_valid_url("http://localhost:8080/api") is True
+        assert is_valid_url("http://example.com:8080/api") is True
+
+    def test_blocks_private_host(self):
+        assert is_valid_url("http://localhost:8080/api") is False
 
     def test_valid_with_query(self):
         assert is_valid_url("https://example.com/path?q=1&b=2") is True
@@ -80,6 +83,6 @@ class TestSafeLink:
         result = _safe_link("Just text", None)
         assert result == "Just text"
 
-    def test_preserves_text(self):
+    def test_escapes_text(self):
         result = _safe_link("Hello & World", "https://x.com")
-        assert "Hello & World" in result
+        assert "Hello &amp; World" in result
