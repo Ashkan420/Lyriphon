@@ -1,4 +1,4 @@
-from handlers.escape_md import escape_md
+from utils.escape_md import escape_md
 
 
 class TestEscapeMd:

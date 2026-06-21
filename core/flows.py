@@ -52,6 +52,13 @@ class AudioFlow(BaseFlow):
         self.pending_telegraph_url = None
         self.send_channel_prompt_id = None
 
+    def clear_search_audio(self):
+        """Clear the search-audio fields without touching pending/channel state."""
+        self.file_id = None
+        self.title = None
+        self.artist = None
+        self.message_id = None
+
     def snapshot(self) -> dict:
         d = super().snapshot()
         d.update({

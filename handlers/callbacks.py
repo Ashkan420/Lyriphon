@@ -4,9 +4,13 @@ from services.deezer_api import get_track, get_album, search_tracks
 from services.lrclib_api import get_lyrics
 from services.telegraph_service import create_song_telegraph, edit_song_page
 from telegram.constants import ParseMode
-from services.url_validation import is_valid_url
-from handlers.escape_md import escape_md
+from utils.url_validation import is_valid_url
+from utils.escape_md import escape_md
 from handlers.song_search import build_track_buttons
+from utils.telegram import (
+    safe_delete, delayed_delete, cancel_edit,
+    search_and_show_results, attach_audio_and_prompt_channel,
+)
 from core.session import (
     get_session, reset_flow, in_mode, transition,
     capture_version, is_stale, SessionMode
@@ -15,21 +19,6 @@ import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
-
-
-async def _delayed_delete(bot, chat_id, message_id, delay):
-    await asyncio.sleep(delay)
-    try:
-        await bot.delete_message(chat_id, message_id)
-    except Exception:
-        logger.debug("Failed to delete message %s in chat %s (delayed)", message_id, chat_id)
-
-
-async def _safe_delete(bot, chat_id, message_id):
-    try:
-        await bot.delete_message(chat_id, message_id)
-    except Exception:
-        logger.debug("Failed to delete message %s in chat %s", message_id, chat_id)
 
 
 async def finalize_lyrics(update, context, source="callback"):
@@ -72,19 +61,11 @@ async def finalize_lyrics(update, context, source="callback"):
 
     chat_id = update.effective_chat.id
 
-    # Delete lyrics messages
     for msg_id in session.lyrics.message_ids:
-        try:
-            await context.bot.delete_message(chat_id, msg_id)
-        except Exception:
-            logger.debug("Failed to delete lyrics message %s", msg_id)
+        await safe_delete(context.bot, chat_id, msg_id)
 
-    # Delete prompt
     if session.edit.prompt_id:
-        try:
-            await context.bot.delete_message(chat_id, session.edit.prompt_id)
-        except Exception:
-            logger.debug("Failed to delete edit prompt %s", session.edit.prompt_id)
+        await safe_delete(context.bot, chat_id, session.edit.prompt_id)
 
     try:
         await asyncio.to_thread(edit_song_page, last_data, full_lyrics)
@@ -96,10 +77,10 @@ async def finalize_lyrics(update, context, source="callback"):
         reset_flow(session.edit)
         if query:
             await query.edit_message_text("❌ Failed to update Telegraph page")
-            asyncio.create_task(_safe_delete(context.bot, chat_id, query.message.message_id))
+            asyncio.create_task(safe_delete(context.bot, chat_id, query.message.message_id))
         else:
             msg = await context.bot.send_message(chat_id=chat_id, text="❌ Failed to update Telegraph page")
-            asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, 4))
+            asyncio.create_task(delayed_delete(context.bot, chat_id, msg.message_id, 4))
         return False
 
     # VERSION CHECK: stale detection AFTER async work, BEFORE committing state
@@ -118,10 +99,10 @@ async def finalize_lyrics(update, context, source="callback"):
 
     if query:
         await query.edit_message_text("✅ Lyrics Updated")
-        asyncio.create_task(_safe_delete(context.bot, chat_id, query.message.message_id))
+        asyncio.create_task(safe_delete(context.bot, chat_id, query.message.message_id))
     else:
         msg = await context.bot.send_message(chat_id=chat_id, text="✅ Lyrics Updated")
-        asyncio.create_task(_delayed_delete(context.bot, chat_id, msg.message_id, 4))
+        asyncio.create_task(delayed_delete(context.bot, chat_id, msg.message_id, 4))
 
     return True
 
@@ -150,10 +131,7 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
 
     session.audio.pending_decision = None
 
-    try:
-        await context.bot.delete_message(chat_id, query.message.message_id)
-    except Exception:
-        logger.debug("Failed to delete audio decision prompt")
+    await safe_delete(context.bot, chat_id, query.message.message_id)
 
     if data == "audio_decision_attach":
         telegraph_url = session.telegraph.url
@@ -165,49 +143,21 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
         track_name = last_data.get("track", "Unknown Track")
         artist_name = last_data.get("artist", "Unknown Artist")
 
-        track_name_md = escape_md(track_name)
-        artist_name_md = escape_md(artist_name)
-
-        button = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
+        caption = await attach_audio_and_prompt_channel(
+            bot=context.bot,
+            chat_id=chat_id,
+            user_id=update.effective_user.id,
+            session=session,
+            file_id=file_id,
+            telegraph_url=telegraph_url,
+            track_name=track_name,
+            artist_name=artist_name,
         )
-        hidden_link = f"[‎]({telegraph_url})"
-        caption = f'>`{track_name_md} — {artist_name_md}`{hidden_link}'
-
-        try:
-            await context.bot.send_audio(
-                chat_id=chat_id,
-                audio=file_id,
-                caption=caption,
-                parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=button,
-            )
-        except Exception:
-            await context.bot.send_message(chat_id=chat_id, text="❌ Failed to attach audio.")
+        if caption is None:
             return
-
-        if file_id:
-            session.audio.pending_file_id = file_id
-            session.audio.pending_caption = caption
-            session.audio.pending_telegraph_url = telegraph_url
-
-        from db import get_user_channels
-        user_channels = await get_user_channels(update.effective_user.id)
-        if user_channels:
-            channel_buttons = [
-                [InlineKeyboardButton(ch_title, callback_data=f"send_channel_{cid}")]
-                for cid, ch_title in user_channels.items()
-            ]
-            prompt = await context.bot.send_message(
-                chat_id=chat_id,
-                text="Send to which channel?",
-                reply_markup=InlineKeyboardMarkup(channel_buttons)
-            )
-            session.audio.send_channel_prompt_id = prompt.message_id
 
         session.telegraph.url = None
 
-        # VERSION CHECK: after async work, before own transition
         if is_stale(session, my_version):
             return
 
@@ -220,33 +170,20 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
         session.audio.message_id = message_id
 
         search_query = f"{artist} {title}".strip()
-        results = await search_tracks(search_query)
-
-        if results is None:
-            await context.bot.send_message(chat_id=chat_id, text="❌ Search failed. Try again later.")
-            session.audio.file_id = None
-            return
-
-        if not results:
-            await context.bot.send_message(chat_id=chat_id, text="❌ No results found.")
-            session.audio.file_id = None
-            return
-
-        # VERSION CHECK: after async search, before committing state
-        if is_stale(session, my_version):
-            return
-
-        session.search.results = results
-        session.search.page = 0
-        await transition(session, SessionMode.SEARCH, context.bot, chat_id)
-
-        buttons = build_track_buttons(results, page=0)
         match_text = f"{artist} - {title}" if artist else title
-        await context.bot.send_message(
+        ok = await search_and_show_results(
+            bot=context.bot,
             chat_id=chat_id,
-            text=f"🎵 Found matches for: {match_text}\nSelect the track:",
-            reply_markup=InlineKeyboardMarkup(buttons),
+            session=session,
+            search_query=search_query,
+            display_label=match_text,
+            build_track_buttons=build_track_buttons,
+            search_tracks=search_tracks,
+            version=my_version,
+            is_stale=is_stale,
         )
+        if not ok:
+            session.audio.file_id = None
 
     elif data == "audio_decision_cancel":
         await transition(session, SessionMode.IDLE, context.bot, chat_id)
@@ -333,10 +270,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
         prompt_id = session.edit.prompt_id
         if prompt_id:
-            try:
-                await context.bot.delete_message(update.effective_chat.id, prompt_id)
-            except Exception:
-                logger.debug("Failed to delete lyrics prompt %s", prompt_id)
+            await safe_delete(context.bot, update.effective_chat.id, prompt_id)
 
         done_cancel_buttons = [
             [InlineKeyboardButton("✅ Done", callback_data="done_lyrics")],
@@ -355,16 +289,10 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
     if not last_data:
         return
 
-    try:
-        await update.message.delete()
-    except Exception:
-        logger.debug("Failed to delete user's field value message")
+    await safe_delete(context.bot, update.effective_chat.id, update.message.message_id)
     prompt_id = session.edit.prompt_id
     if prompt_id:
-        try:
-            await context.bot.delete_message(update.effective_chat.id, prompt_id)
-        except Exception:
-            logger.debug("Failed to delete edit prompt %s", prompt_id)
+        await safe_delete(context.bot, update.effective_chat.id, prompt_id)
 
     url_fields = ["track_link", "artist_link", "album_link", "cover"]
 
@@ -377,7 +305,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
         else:
             if not is_valid_url(new_value):
                 msg = await update.effective_chat.send_message("❌ Invalid URL format")
-                asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
+                asyncio.create_task(delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
                 return
 
             if field == "cover":
@@ -405,7 +333,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
         await transition(session, SessionMode.IDLE, context.bot, update.effective_chat.id)
         reset_flow(session.edit)
         msg = await update.effective_chat.send_message("❌ Failed to update Telegraph page")
-        asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
+        asyncio.create_task(delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
         return
 
     # Transition hooks delete messages, handler owns reset
@@ -413,35 +341,25 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
     reset_flow(session.edit)
 
     msg = await update.effective_chat.send_message("✅ Updated")
-    asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
+    asyncio.create_task(delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
 
 
 async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = get_session(context)
 
+    chat_id = update.effective_chat.id
+
     if in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS):
-        try:
-            await update.message.delete()
-        except Exception:
-            logger.debug("Failed to delete /cancel command message")
-
-        # Transition hooks delete messages
-        await transition(session, SessionMode.IDLE, context.bot, update.effective_chat.id)
-
-        # Handler owns the reset
-        reset_flow(session.edit)
-        reset_flow(session.lyrics)
+        await safe_delete(context.bot, chat_id, update.message.message_id)
+        await cancel_edit(context.bot, chat_id, session)
 
         msg = await update.effective_chat.send_message("❌ Edit cancelled")
-        asyncio.create_task(_delayed_delete(context.bot, update.effective_chat.id, msg.message_id, 5))
+        asyncio.create_task(delayed_delete(context.bot, chat_id, msg.message_id, 5))
         return
 
     # No active edit — just clear audio state
-    session.audio.file_id = None
-    session.audio.title = None
-    session.audio.artist = None
-    session.audio.message_id = None
-    await transition(session, SessionMode.IDLE, context.bot, update.effective_chat.id)
+    session.audio.clear_search_audio()
+    await transition(session, SessionMode.IDLE, context.bot, chat_id)
 
 
 async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -450,11 +368,7 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not in_mode(session, SessionMode.EDIT_LYRICS):
         return
 
-    try:
-        await update.message.delete()
-    except Exception:
-        logger.debug("Failed to delete /done command message")
-
+    await safe_delete(context.bot, update.effective_chat.id, update.message.message_id)
     await finalize_lyrics(update, context, source="message")
 
 
@@ -468,18 +382,13 @@ async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFA
 
     await query.answer()
 
-    # Transition hooks delete messages
-    await transition(session, SessionMode.IDLE, context.bot, update.effective_chat.id)
-
-    # Handler owns the reset
-    reset_flow(session.edit)
-    reset_flow(session.lyrics)
+    await cancel_edit(context.bot, update.effective_chat.id, session)
 
     try:
         await query.edit_message_text("❌ Edit cancelled")
     except Exception:
         logger.debug("Failed to edit cancel message")
-    asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
+    asyncio.create_task(safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
 
 
 async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -571,7 +480,7 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
         return
 
     await query.edit_message_text("✅ Sent to channel!")
-    asyncio.create_task(_safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
+    asyncio.create_task(safe_delete(context.bot, update.effective_chat.id, query.message.message_id))
 
     session.audio.pending_file_id = None
     session.audio.pending_caption = None
@@ -666,85 +575,34 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session.telegraph.data = last_data
 
     pending_audio_file_id = session.audio.file_id
-    if pending_audio_file_id:
+    has_audio = bool(pending_audio_file_id)
+
+    if has_audio:
         pending_message_id = session.audio.message_id
 
-        track_name_md = escape_md(track_name)
-        artist_name_md = escape_md(artist_name)
-        hidden_link = f"[‎]({telegraph_url})"
-        caption = f'>`{track_name_md} — {artist_name_md}`{hidden_link}'
-
-        button = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Lyrics", url=telegraph_url)]]
+        caption = await attach_audio_and_prompt_channel(
+            bot=context.bot,
+            chat_id=query.message.chat_id,
+            user_id=update.effective_user.id,
+            session=session,
+            file_id=pending_audio_file_id,
+            telegraph_url=telegraph_url,
+            track_name=track_name,
+            artist_name=artist_name,
         )
-
-        try:
-            await context.bot.send_audio(
-                chat_id=query.message.chat_id,
-                audio=pending_audio_file_id,
-                caption=caption,
-                parse_mode=ParseMode.MARKDOWN_V2,
-                reply_markup=button
-            )
-        except Exception:
+        if caption is None:
             await query.edit_message_text("❌ Failed to attach audio. Try again.")
             session.audio.file_id = None
             return
 
-        session.audio.pending_file_id = pending_audio_file_id
-        session.audio.pending_caption = caption
-        session.audio.pending_telegraph_url = telegraph_url
-
         if pending_message_id:
-            try:
-                await context.bot.delete_message(
-                    chat_id=query.message.chat_id,
-                    message_id=pending_message_id
-                )
-            except Exception:
-                logger.debug("Failed to delete original audio message %s", pending_message_id)
+            await safe_delete(context.bot, query.message.chat_id, pending_message_id)
 
-        session.audio.file_id = None
-        session.audio.title = None
-        session.audio.artist = None
-        session.audio.message_id = None
+        session.audio.clear_search_audio()
         session.telegraph.url = None
 
-        from db import get_user_channels
-        user_channels = await get_user_channels(update.effective_user.id)
-        if user_channels:
-            channel_buttons = [
-                [InlineKeyboardButton(title, callback_data=f"send_channel_{chat_id}")]
-                for chat_id, title in user_channels.items()
-            ]
-            prompt = await query.message.reply_text(
-                "Send to which channel?",
-                reply_markup=InlineKeyboardMarkup(channel_buttons)
-            )
-            session.audio.send_channel_prompt_id = prompt.message_id
-
-        is_inline = bool(query.inline_message_id)
-        if is_inline:
-            await query.edit_message_text(
-                f"<a href=\"{telegraph_url}\">{track_name} - {artist_name}</a>",
-                parse_mode="HTML"
-            )
-        else:
-            reply_markup = build_edit_menu()
-            await query.edit_message_text(
-                f"✅ <b>Telegraph Created & Audio Attached</b>\n\n"
-                f"<blockquote>"
-                f"🎵 <b>{track_name}</b>\n"
-                f"👤 {artist_name}\n"
-                f"💽 {album_name}\n"
-                f"📅 {release_date}"
-                f"</blockquote>\n\n"
-                f"👇 Edit options below — or tap to open the page:\n"
-                f'<a href="{telegraph_url}">📖 Open Telegraph Page</a>',
-                parse_mode="HTML",
-                reply_markup=reply_markup
-            )
-        return
+    status = "Telegraph Created & Audio Attached" if has_audio else "Telegraph Created"
+    extra = "" if has_audio else "Send a music file to attach the Lyrics button to it.\n\n"
 
     is_inline = bool(query.inline_message_id)
     if is_inline:
@@ -754,16 +612,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         reply_markup = build_edit_menu()
-
         await query.edit_message_text(
-            f"✅ <b>Telegraph Created</b>\n\n"
+            f"✅ <b>{status}</b>\n\n"
             f"<blockquote>"
             f"🎵 <b>{track_name}</b>\n"
             f"👤 {artist_name}\n"
             f"💽 {album_name}\n"
             f"📅 {release_date}"
             f"</blockquote>\n\n"
-            f"Send a music file to attach the Lyrics button to it.\n\n"
+            f"{extra}"
             f"👇 Edit options below — or tap to open the page:\n"
             f'<a href="{telegraph_url}">📖 Open Telegraph Page</a>',
             parse_mode="HTML",

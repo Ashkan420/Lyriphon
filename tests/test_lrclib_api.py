@@ -81,7 +81,7 @@ class TestGetLyrics:
 
         self.mock_client.get.side_effect = [empty_resp, success_resp]
 
-        with patch("services.lrclib_api.asyncio.sleep", new_callable=AsyncMock):
+        with patch("utils.retry.asyncio.sleep", new_callable=AsyncMock):
             result = await get_lyrics("Song", "Artist", retries=1, delay=0.01)
 
         assert result == "Found on retry"
@@ -100,7 +100,7 @@ class TestGetLyrics:
             success_resp,
         ]
 
-        with patch("services.lrclib_api.asyncio.sleep", new_callable=AsyncMock):
+        with patch("utils.retry.asyncio.sleep", new_callable=AsyncMock):
             result = await get_lyrics("Song", "Artist", retries=1, delay=0.01)
 
         assert result == "Success after error"
@@ -110,7 +110,7 @@ class TestGetLyrics:
         from services.lrclib_api import get_lyrics
         self.mock_client.get.side_effect = httpx.HTTPError("timeout")
 
-        with patch("services.lrclib_api.asyncio.sleep", new_callable=AsyncMock):
+        with patch("utils.retry.asyncio.sleep", new_callable=AsyncMock):
             result = await get_lyrics("Song", "Artist", retries=2, delay=0.01)
 
         assert result is None

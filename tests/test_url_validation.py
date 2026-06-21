@@ -1,5 +1,5 @@
 import pytest
-from services.url_validation import is_valid_url, _is_valid_image_url, _safe_link
+from utils.url_validation import is_valid_url, _is_valid_image_url, _safe_link
 
 
 class TestIsValidUrl:
