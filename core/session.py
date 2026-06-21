@@ -26,18 +26,6 @@ VALID_TRANSITIONS = {
 }
 
 
-# Documentation only — not enforced automatically.
-# When resetting a flow, these dependent flows may also need attention.
-# "lyrics depends on edit" means: if edit is reset, lyrics may be in a broken state.
-FLOW_RELATIONSHIPS = {
-    "edit": [],
-    "lyrics": ["edit"],
-    "audio": [],
-    "search": [],
-    "telegraph": [],
-}
-
-
 class Session:
     """Top-level session container. Stored directly in context.user_data["session"]."""
 
@@ -160,8 +148,7 @@ async def _cleanup_edit(bot, chat_id, session: Session):
         try:
             await bot.delete_message(chat_id, session.edit.prompt_id)
         except Exception:
-            pass
-    # Hooks ONLY delete messages — handlers own the reset
+            logger.debug("Cleanup: failed to delete edit prompt %s", session.edit.prompt_id)
 
 
 async def _cleanup_lyrics(bot, chat_id, session: Session):
@@ -170,13 +157,12 @@ async def _cleanup_lyrics(bot, chat_id, session: Session):
             try:
                 await bot.delete_message(chat_id, msg_id)
             except Exception:
-                pass
+                logger.debug("Cleanup: failed to delete lyrics message %s", msg_id)
         if session.edit.prompt_id:
             try:
                 await bot.delete_message(chat_id, session.edit.prompt_id)
             except Exception:
-                pass
-    # Hooks ONLY delete messages — handlers own the reset
+                logger.debug("Cleanup: failed to delete edit prompt %s", session.edit.prompt_id)
 
 
 on_exit_mode(SessionMode.EDIT_FIELD, _cleanup_edit)
@@ -184,13 +170,21 @@ on_exit_mode(SessionMode.EDIT_LYRICS, _cleanup_lyrics)
 
 
 async def session_debug_command(update, context):
+    from config import BOT_OWNER_ID
+    import html as html_module
+
+    user_id = str(update.effective_user.id) if update.effective_user else None
+    if BOT_OWNER_ID and user_id != BOT_OWNER_ID:
+        await update.message.reply_text("⛔ This command is restricted to the bot owner.")
+        return
+
     session = get_session(context)
     snap = session.snapshot()
-    lines = [f"Mode: {snap['mode']}", f"Version: {snap['version']}"]
+    lines = [f"Mode: {html_module.escape(str(snap['mode']))}", f"Version: {snap['version']}"]
     for flow_name in ["audio", "search", "edit", "lyrics", "telegraph"]:
         flow_snap = snap[flow_name]
         lock_str = " [LOCKED]" if flow_snap.pop("locked") else ""
-        lines.append(f"\n<b>{flow_name}</b>{lock_str}:")
+        lines.append(f"\n<b>{html_module.escape(flow_name)}</b>{lock_str}:")
         for k, v in flow_snap.items():
-            lines.append(f"  {k}: {v}")
+            lines.append(f"  {html_module.escape(str(k))}: {html_module.escape(str(v))}")
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")

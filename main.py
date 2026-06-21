@@ -3,7 +3,7 @@ from config import BOT_TOKEN
 from handlers.start import start_command, help_command
 from handlers.song_search import song_search, handle_search_page_callback
 from handlers.callbacks import handle_callback, send_to_channel_callback, handle_edit_field_callback, handle_new_field_value, cancel_edit_command, done_lyrics_command, handle_cancel_edit_callback, handle_done_lyrics_callback, handle_audio_decision_callback
-from handlers.handle_music_file import handle_music_file
+from handlers.music_file import handle_music_file
 from handlers.channel_tracker import track_channels
 from handlers.inline_search import inline_search
 from core.session import session_debug_command

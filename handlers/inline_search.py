@@ -2,12 +2,7 @@ from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, 
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from services.deezer_api import search_tracks
-
-
-def format_duration(seconds: int) -> str:
-    minutes = seconds // 60
-    sec = seconds % 60
-    return f"{minutes}:{sec:02d}"
+from utils.telegram import format_duration
 
 
 async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
