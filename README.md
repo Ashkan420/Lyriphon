@@ -46,32 +46,33 @@ External services:
 ## Project structure
 
 ```
-main.py                     Entry point; registers all handlers and starts polling
-config.py                   Loads & validates environment variables
-db.py                       asyncpg pool + channel persistence
-core/
-  session.py                SessionMode FSM, transitions, stale-version checks
-  flows.py                  Per-feature session state (audio, search, edit, lyrics, telegraph)
-handlers/
-  start.py                  /start and /help
-  song_search.py            /song search + result pagination
-  callbacks.py              Track selection, editing, audio decisions, send-to-channel
-  music_file.py             Handles uploaded audio files
-  channel_tracker.py        Tracks channels where the bot is added/removed as admin
-  inline_search.py          Inline-mode search
-services/
-  deezer_api.py             Deezer metadata
-  lrclib_api.py             Lyrics retrieval
-  telegraph_service.py      Telegraph page build/publish
-  lyrics_formatter.py       Lyrics → Telegraph HTML
-utils/
-  telegram.py               Shared Telegram helpers (safe delete, attach flow, etc.)
-  retry.py                  Sync/async retry with exponential backoff
-  url_validation.py         URL validation + SSRF guard
-  escape_md.py              MarkdownV2 escaping
-scripts/
-  generate_telegraph_token.py   One-off Telegraph access-token generator
-tests/                      pytest suite
+Lyriphon/
+├── main.py                          Entry point; registers handlers and starts polling
+├── config.py                        Loads & validates environment variables
+├── db.py                            asyncpg pool + channel persistence
+├── core/
+│   ├── session.py                   SessionMode FSM, transitions, stale-version checks
+│   └── flows.py                     Per-feature session state (audio, search, edit, lyrics, telegraph)
+├── handlers/
+│   ├── start.py                     /start and /help
+│   ├── song_search.py               /song search + result pagination
+│   ├── callbacks.py                 Track selection, editing, audio decisions, send-to-channel
+│   ├── music_file.py                Handles uploaded audio files
+│   ├── channel_tracker.py           Tracks channels where the bot is added/removed as admin
+│   └── inline_search.py             Inline-mode search
+├── services/
+│   ├── deezer_api.py                Deezer metadata
+│   ├── lrclib_api.py                Lyrics retrieval
+│   ├── telegraph_service.py         Telegraph page build/publish
+│   └── lyrics_formatter.py          Lyrics → Telegraph HTML
+├── utils/
+│   ├── telegram.py                  Shared Telegram helpers (safe delete, attach flow, etc.)
+│   ├── retry.py                     Sync/async retry with exponential backoff
+│   ├── url_validation.py            URL validation + SSRF guard
+│   └── escape_md.py                 MarkdownV2 escaping
+├── scripts/
+│   └── generate_telegraph_token.py  One-off Telegraph access-token generator
+└── tests/                           pytest suite
 ```
 
 ---
