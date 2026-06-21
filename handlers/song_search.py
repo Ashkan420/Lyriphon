@@ -1,3 +1,5 @@
+"""Handle /song search command and search-result pagination callbacks."""
+
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -7,10 +9,13 @@ from utils.telegram import format_duration, safe_delete, search_and_show_results
 
 logger = logging.getLogger(__name__)
 
+# --- Constants ---
+
 PAGE_SIZE = 5
 
 
 def build_track_buttons(results, page: int = 0):
+    """Build paginated inline keyboard from Deezer search *results*."""
     start = page * PAGE_SIZE
     end = start + PAGE_SIZE
     page_results = results[start:end]
@@ -45,6 +50,7 @@ def build_track_buttons(results, page: int = 0):
 
 
 async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entry point for ``/song <query>`` — clears prior state and runs search."""
     session = get_session(context)
     chat_id = update.effective_chat.id
 
@@ -71,6 +77,7 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_search_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle pagination button presses (prev/next/first page)."""
     query = update.callback_query
     await query.answer()
     data = query.data

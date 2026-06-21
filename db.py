@@ -1,4 +1,5 @@
-#db.py
+"""Database connection pool and channel CRUD operations (asyncpg + Supabase)."""
+
 import asyncpg
 import logging
 from config import DATABASE_URL
@@ -9,12 +10,14 @@ pool = None
 
 
 def _require_pool():
+    """Return the connection pool, raising if ``init_db()`` was never called."""
     if pool is None:
         raise RuntimeError("Database pool is not initialized. Was init_db() awaited?")
     return pool
 
 
 async def init_db():
+    """Create the global asyncpg connection pool from ``DATABASE_URL``."""
     global pool
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL environment variable is not set")
@@ -31,9 +34,13 @@ async def init_db():
         raise
 
 async def get_pool():
+    """Return the raw connection pool (for advanced use)."""
     return pool
 
+# --- Channel operations ---
+
 async def get_user_channels(user_id: int):
+    """Fetch all channels tracked by *user_id*. Returns ``{channel_id: title}``."""
     p = _require_pool()
     try:
         async with p.acquire() as conn:
@@ -53,6 +60,7 @@ async def get_user_channels(user_id: int):
         return {}
 
 async def get_users_by_channel(channel_id: int):
+    """Return a list of user IDs that are tracking *channel_id*."""
     p = _require_pool()
     try:
         async with p.acquire() as conn:
@@ -69,6 +77,7 @@ async def get_users_by_channel(channel_id: int):
 
 
 async def add_channel(user_id: int, chat_id: int, title: str):
+    """Insert a channel subscription. Ignores duplicates via ``ON CONFLICT``."""
     p = _require_pool()
     try:
         async with p.acquire() as conn:
@@ -86,6 +95,7 @@ async def add_channel(user_id: int, chat_id: int, title: str):
         raise
 
 async def remove_channel(user_id: int, chat_id: int):
+    """Delete a single channel subscription for *user_id*."""
     p = _require_pool()
     try:
         async with p.acquire() as conn:
@@ -100,6 +110,3 @@ async def remove_channel(user_id: int, chat_id: int):
             "Failed to remove channel %s for user %s", chat_id, user_id
         )
         raise
-
-
-

@@ -1,3 +1,5 @@
+"""Synchronous and async retry helpers with exponential backoff."""
+
 import time
 import random
 import asyncio

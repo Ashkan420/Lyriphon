@@ -1,4 +1,5 @@
-# handlers/channel_tracker.py
+"""Track bot membership in channels — registers/removes from DB on admin add/remove."""
+
 import logging
 from telegram import ChatMemberUpdated
 from telegram.ext import ContextTypes
@@ -7,6 +8,7 @@ from db import add_channel, get_users_by_channel, remove_channel, get_user_chann
 logger = logging.getLogger(__name__)
 
 async def track_channels(update: ChatMemberUpdated, context: ContextTypes.DEFAULT_TYPE):
+    """React to the bot being added or removed from a channel/supergroup."""
     chat = update.my_chat_member.chat
     status = update.my_chat_member.new_chat_member.status
 

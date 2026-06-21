@@ -1,3 +1,5 @@
+"""Callback query and message handlers for track selection, editing, and channel send."""
+
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from services.deezer_api import get_track, get_album, search_tracks
@@ -21,7 +23,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# --- Lyrics finalization ---
+
 async def finalize_lyrics(update, context, source="callback"):
+    """Save the accumulated lyrics buffer to Telegraph and return to IDLE.
+
+    Handles staleness detection and double-finalization guards.
+    Returns True on success, False on failure or stale state.
+    """
     query = update.callback_query if source == "callback" else None
     session = get_session(context)
 
@@ -107,7 +116,10 @@ async def finalize_lyrics(update, context, source="callback"):
     return True
 
 
+# --- Audio decision callbacks ---
+
 async def handle_audio_decision_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the user's choice after receiving a music file while a Telegraph page is active: attach, search, or cancel."""
     query = update.callback_query
     await query.answer()
 
@@ -190,7 +202,10 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
         await context.bot.send_message(chat_id=chat_id, text="❌ Cancelled.")
 
 
+# --- Edit field callbacks ---
+
 async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Prompt the user to send a new value for the selected Telegraph page field."""
     query = update.callback_query
     session = get_session(context)
 
@@ -244,6 +259,7 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
 
 
 async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Receive the user's new field value (text message) and apply it to the Telegraph page."""
     session = get_session(context)
 
     if not (in_mode(session, SessionMode.EDIT_FIELD) or in_mode(session, SessionMode.EDIT_LYRICS)):
@@ -345,6 +361,7 @@ async def handle_new_field_value(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle ``/cancel`` — abort any active edit or clear audio state."""
     session = get_session(context)
 
     chat_id = update.effective_chat.id
@@ -363,6 +380,7 @@ async def cancel_edit_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle ``/done`` — finalize accumulated lyrics outside of a callback context."""
     session = get_session(context)
 
     if not in_mode(session, SessionMode.EDIT_LYRICS):
@@ -373,6 +391,7 @@ async def done_lyrics_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the Cancel button press during an active edit session."""
     query = update.callback_query
     session = get_session(context)
 
@@ -392,6 +411,7 @@ async def handle_cancel_edit_callback(update: Update, context: ContextTypes.DEFA
 
 
 async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the Done button press — finalize lyrics from a callback context."""
     query = update.callback_query
     session = get_session(context)
 
@@ -402,7 +422,10 @@ async def handle_done_lyrics_callback(update: Update, context: ContextTypes.DEFA
     await finalize_lyrics(update, context, source="callback")
 
 
+# --- Edit menu and channel send ---
+
 def build_edit_menu():
+    """Build the inline keyboard with all editable field options."""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✏️ Lyrics", callback_data="edit_field_lyrics"),
@@ -428,6 +451,7 @@ def build_edit_menu():
 
 
 async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle channel selection — verify admin status and forward the audio to the channel."""
     query = update.callback_query
     await query.answer()
 
@@ -488,7 +512,10 @@ async def send_to_channel_callback(update: Update, context: ContextTypes.DEFAULT
     session.audio.send_channel_prompt_id = None
 
 
+# --- Track selection callback ---
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle a track selection from search results — fetch metadata, lyrics, and create the Telegraph page."""
     query = update.callback_query
     await query.answer()
 

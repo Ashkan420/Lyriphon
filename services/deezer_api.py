@@ -1,7 +1,11 @@
+"""Deezer API client — search tracks, fetch track/album metadata."""
+
 import httpx
 import logging
 
 logger = logging.getLogger(__name__)
+
+# --- API endpoints ---
 
 DEEZER_SEARCH_URL = "https://api.deezer.com/search"
 DEEZER_TRACK_URL = "https://api.deezer.com/track/"
@@ -11,6 +15,7 @@ _client = httpx.AsyncClient(timeout=10.0)
 
 
 async def search_tracks(query: str, limit: int = 25):
+    """Search Deezer for tracks matching *query*. Returns a list of track dicts, or None on error."""
     try:
         r = await _client.get(DEEZER_SEARCH_URL, params={"q": query})
         r.raise_for_status()
@@ -28,6 +33,7 @@ async def search_tracks(query: str, limit: int = 25):
 
 
 async def get_track(track_id: int):
+    """Fetch full track details from Deezer by *track_id*."""
     try:
         r = await _client.get(DEEZER_TRACK_URL + str(track_id))
         r.raise_for_status()
@@ -44,6 +50,7 @@ async def get_track(track_id: int):
 
 
 async def get_album(album_id: int):
+    """Fetch album details (including release date) from Deezer by *album_id*."""
     try:
         r = await _client.get(DEEZER_ALBUM_URL + str(album_id))
         r.raise_for_status()

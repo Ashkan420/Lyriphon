@@ -1,3 +1,5 @@
+"""Handle inline queries — search and present track results in any chat."""
+
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -6,6 +8,7 @@ from utils.telegram import format_duration
 
 
 async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Answer an inline query with up to 5 matching Deezer tracks."""
     query = update.inline_query
     query_text = query.query.strip()
 

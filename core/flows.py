@@ -1,3 +1,6 @@
+"""Session flow state containers — each flow tracks a discrete piece of user interaction state."""
+
+
 class BaseFlow:
     """Base class for all session flows."""
 

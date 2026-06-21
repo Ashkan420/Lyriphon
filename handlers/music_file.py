@@ -1,3 +1,5 @@
+"""Handle incoming audio files — parse metadata and trigger search or attach flow."""
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from services.deezer_api import search_tracks
@@ -7,6 +9,8 @@ from core.session import get_session, in_mode, transition, SessionMode
 
 
 async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Process a received audio file: extract title/artist, then either attach
+    to the current Telegraph page or start a new search."""
     music_msg = update.message
     session = get_session(context)
     chat_id = update.effective_chat.id
@@ -26,6 +30,7 @@ async def handle_music_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not artist:
         artist = ""
 
+    # Parse "Artist - Title" from the filename/title if metadata is missing
     if " - " in title:
         parts = title.split(" - ", 1)
         artist = artist or parts[0].strip()

@@ -1,9 +1,12 @@
+"""Handle /start and /help commands."""
+
 from telegram import Update
 from telegram.ext import ContextTypes
 from core.session import reset_session
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the welcome message and reset the user's session."""
     reset_session(context)  # Full reset is ONLY allowed here
     user = update.effective_user
     name = user.first_name if user else "there"
@@ -21,6 +24,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the help/usage message."""
     help_text = (
         f"Lyriphon Bot Commands\n\n"
         "/song - Search for a song and create a lyrics page\n"

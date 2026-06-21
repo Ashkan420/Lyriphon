@@ -1,3 +1,5 @@
+"""Session management — mode transitions, flow lifecycle, staleness detection, and cleanup hooks."""
+
 import json
 import functools
 import logging
@@ -8,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionMode(Enum):
+    """All possible top-level states a user session can be in."""
     IDLE = "idle"
     SEARCH = "search"
     AUDIO_DECISION = "audio_decision"
@@ -55,6 +58,7 @@ CLEANUP_HOOKS = {}
 
 
 def get_session(context) -> Session:
+    """Retrieve or create the user's Session from ``context.user_data``."""
     if "session" not in context.user_data:
         context.user_data["session"] = Session()
     return context.user_data["session"]
@@ -77,10 +81,12 @@ def reset_flow(flow: BaseFlow):
 
 
 def capture_version(session: Session) -> int:
+    """Capture the current session version for later staleness checks."""
     return session.version
 
 
 def is_stale(session: Session, captured_version: int) -> bool:
+    """Return True if the session has been reset since *captured_version* was taken."""
     return session.version != captured_version
 
 
@@ -112,6 +118,7 @@ async def transition(session: Session, to_mode: SessionMode, bot=None, chat_id=N
 
 
 def on_exit_mode(mode: SessionMode, callback):
+    """Register a cleanup hook that runs when leaving *mode*."""
     CLEANUP_HOOKS.setdefault(mode, []).append(callback)
 
 
@@ -123,10 +130,12 @@ def set_mode(session: Session, mode: SessionMode):
 
 
 def in_mode(session: Session, mode: SessionMode) -> bool:
+    """Return True if the session is currently in *mode*."""
     return session.mode == mode
 
 
 def require_mode(mode: SessionMode):
+    """Decorator that blocks a handler unless the session is in *mode*."""
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(update, context, *args, **kwargs):

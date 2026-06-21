@@ -1,3 +1,5 @@
+"""One-time script to generate a Telegraph API access token."""
+
 from telegraph import Telegraph
 
 telegraph = Telegraph()

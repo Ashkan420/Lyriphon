@@ -1,3 +1,5 @@
+"""Telegraph page creation and editing for song lyrics."""
+
 import html
 
 from telegraph import Telegraph
@@ -75,7 +77,7 @@ def create_song_telegraph(
 
 
 def edit_song_page(last_data: dict, lyrics: str, retries: int = 2, delay: float = 2.0):
-
+    """Update an existing Telegraph page with new lyrics content."""
     formatted_lyrics = format_lyrics_for_telegraph(lyrics)
 
     html_content = _build_html_page(
@@ -114,6 +116,7 @@ def _build_html_page(
     album_link,
     formatted_lyrics
 ):
+    """Assemble the full HTML body for a Telegraph song page."""
     # Cover image (only if valid image URL)
     cover_html = ""
     if _is_valid_image_url(album_cover_url):

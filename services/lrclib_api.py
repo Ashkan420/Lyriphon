@@ -1,3 +1,5 @@
+"""LRCLIB API client — fetch synced/plain lyrics with automatic retries."""
+
 import httpx
 from utils.retry import retry_async
 
@@ -11,6 +13,11 @@ class _NoLyricsFound(Exception):
 
 
 async def get_lyrics(track: str, artist: str, retries: int = 2, delay: float = 2.0):
+    """Search LRCLIB for lyrics by *track* and *artist* name.
+
+    Returns plain or synced lyrics string, or None if nothing is found
+    after all retry attempts.
+    """
     async def _fetch():
         r = await _client.get(
             LRCLIB_SEARCH,

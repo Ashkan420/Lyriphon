@@ -1,8 +1,15 @@
+"""Format raw lyrics text into Telegraph-compatible HTML."""
+
 import re
 import html
 
 
 def format_lyrics_for_telegraph(lyrics: str) -> str:
+    """Convert plain-text *lyrics* into HTML paragraphs for Telegraph.
+
+    Splits on blank lines to separate verses and inserts zero-width
+    spaces between them for visual spacing.
+    """
     if not lyrics:
         return "<p>Lyrics not found.</p>"
 

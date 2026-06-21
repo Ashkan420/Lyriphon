@@ -1,3 +1,5 @@
+"""Telegram helper functions — message deletion, formatting, search display, and audio attach."""
+
 import asyncio
 import logging
 
@@ -11,11 +13,10 @@ from db import get_user_channels
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Message helpers
-# ---------------------------------------------------------------------------
+# --- Message helpers ---
 
 async def safe_delete(bot, chat_id, message_id):
+    """Delete a message, silently ignoring errors (e.g. already deleted)."""
     try:
         await bot.delete_message(chat_id, message_id)
     except Exception:
@@ -23,23 +24,21 @@ async def safe_delete(bot, chat_id, message_id):
 
 
 async def delayed_delete(bot, chat_id, message_id, delay):
+    """Delete a message after *delay* seconds."""
     await asyncio.sleep(delay)
     await safe_delete(bot, chat_id, message_id)
 
 
-# ---------------------------------------------------------------------------
-# Formatting
-# ---------------------------------------------------------------------------
+# --- Formatting ---
 
 def format_duration(seconds: int) -> str:
+    """Format *seconds* as ``M:SS``."""
     minutes = seconds // 60
     sec = seconds % 60
     return f"{minutes}:{sec:02d}"
 
 
-# ---------------------------------------------------------------------------
-# Search → display results
-# ---------------------------------------------------------------------------
+# --- Search → display results ---
 
 async def search_and_show_results(
     bot,
@@ -81,9 +80,7 @@ async def search_and_show_results(
     return True
 
 
-# ---------------------------------------------------------------------------
-# Audio attach → channel prompt
-# ---------------------------------------------------------------------------
+# --- Audio attach → channel prompt ---
 
 async def attach_audio_and_prompt_channel(
     bot,
@@ -139,9 +136,7 @@ async def attach_audio_and_prompt_channel(
     return caption
 
 
-# ---------------------------------------------------------------------------
-# Cancel-edit helper
-# ---------------------------------------------------------------------------
+# --- Cancel-edit helper ---
 
 async def cancel_edit(bot, chat_id, session):
     """Transition to IDLE and reset edit/lyrics flows."""

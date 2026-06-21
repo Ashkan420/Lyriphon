@@ -1,3 +1,5 @@
+"""URL validation utilities — ensures user-supplied URLs are safe and well-formed."""
+
 import html
 import ipaddress
 import re
@@ -38,6 +40,7 @@ def _is_private_host(hostname: str) -> bool:
 
 
 def is_valid_url(url: str) -> bool:
+    """Return True if *url* uses http/https and does not point to a private host."""
     try:
         result = urlparse(url)
         if result.scheme not in ("http", "https") or not result.netloc:
@@ -50,10 +53,9 @@ def is_valid_url(url: str) -> bool:
         logger.debug("URL validation failed for: %s", url)
         return False
 
+
 def _is_valid_image_url(url: str) -> bool:
-    """
-    Validates that the URL ends with a proper image extension.
-    """
+    """Return True if *url* points to a known image extension (jpg, png, webp)."""
     if not url:
         return False
 
@@ -63,10 +65,9 @@ def _is_valid_image_url(url: str) -> bool:
     )
     return re.match(pattern, url) is not None
 
+
 def _safe_link(text: str, url: str) -> str:
-    """
-    Returns clickable link if URL exists, otherwise plain escaped text.
-    """
+    """Return a clickable HTML link if *url* is set, otherwise plain escaped text."""
     safe_text = html.escape(str(text))
     if url:
         safe_url = html.escape(str(url), quote=True)
