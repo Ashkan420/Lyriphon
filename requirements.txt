@@ -2,7 +2,7 @@
 asyncpg==0.31.0
 httpx==0.25.2
 python-dotenv==1.2.2
-python-telegram-bot==20.7
+python-telegram-bot[webhooks]==20.7
 telegraph==2.2.0
 
 # Testing
