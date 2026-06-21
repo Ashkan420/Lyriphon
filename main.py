@@ -9,6 +9,7 @@ from config import (
     WEBHOOK_PATH,
     WEBHOOK_SECRET_TOKEN,
 )
+# WEBHOOK_URL is validated as required at config import time.
 from handlers.start import start_command, help_command
 from handlers.song_search import song_search, handle_search_page_callback
 from handlers.callbacks import handle_callback, send_to_channel_callback, handle_edit_field_callback, handle_new_field_value, cancel_edit_command, done_lyrics_command, handle_cancel_edit_callback, handle_done_lyrics_callback, handle_audio_decision_callback
@@ -52,12 +53,6 @@ app.add_handler(MessageHandler(filters.AUDIO, handle_music_file))
 
 
 if __name__ == "__main__":
-    if not WEBHOOK_URL:
-        raise RuntimeError(
-            "WEBHOOK_URL must be set to run the bot in webhook mode. "
-            "Set it to the public HTTPS base URL that Telegram should deliver updates to."
-        )
-
     url_path = WEBHOOK_PATH.strip("/")
     full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}/{url_path}"
 
@@ -68,5 +63,4 @@ if __name__ == "__main__":
         url_path=url_path,
         webhook_url=full_webhook_url,
         secret_token=WEBHOOK_SECRET_TOKEN,
-        drop_pending_updates=True,
     )
