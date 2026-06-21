@@ -182,7 +182,7 @@ async def handle_audio_decision_callback(update: Update, context: ContextTypes.D
             version=my_version,
             is_stale=is_stale,
         )
-        if not ok:
+        if not ok and not is_stale(session, my_version):
             session.audio.file_id = None
 
     elif data == "audio_decision_cancel":

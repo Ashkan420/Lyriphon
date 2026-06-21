@@ -27,6 +27,15 @@ class TestIsValidUrl:
     def test_blocks_private_host(self):
         assert is_valid_url("http://localhost:8080/api") is False
 
+    def test_blocks_private_ip_literals(self):
+        assert is_valid_url("http://127.0.0.1/admin") is False
+        assert is_valid_url("http://10.0.0.5") is False
+        assert is_valid_url("http://192.168.1.1") is False
+        assert is_valid_url("http://169.254.169.254/latest/meta-data") is False
+
+    def test_allows_public_ip_literal(self):
+        assert is_valid_url("http://8.8.8.8") is True
+
     def test_valid_with_query(self):
         assert is_valid_url("https://example.com/path?q=1&b=2") is True
 

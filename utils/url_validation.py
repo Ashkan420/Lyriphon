@@ -1,23 +1,40 @@
 import html
 import ipaddress
 import re
-import socket
 import logging
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+_PRIVATE_HOST_SUFFIXES = (".localhost", ".local", ".internal")
+
 
 def _is_private_host(hostname: str) -> bool:
+    """Reject obviously-internal hosts without any network I/O.
+
+    Avoids blocking DNS resolution on the event loop. For IP literals the
+    address ranges are checked directly; bare hostnames are matched against
+    well-known private/loopback names.
+    """
+    if not hostname:
+        return True
+
+    host = hostname.strip().lower().rstrip(".")
+    if host == "localhost" or host.endswith(_PRIVATE_HOST_SUFFIXES):
+        return True
+
     try:
-        for info in socket.getaddrinfo(hostname, None):
-            addr = info[4][0]
-            ip = ipaddress.ip_address(addr)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                return True
-    except (socket.gaierror, ValueError):
-        pass
-    return False
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
 
 
 def is_valid_url(url: str) -> bool:
