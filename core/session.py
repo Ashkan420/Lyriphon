@@ -26,18 +26,6 @@ VALID_TRANSITIONS = {
 }
 
 
-# Documentation only — not enforced automatically.
-# When resetting a flow, these dependent flows may also need attention.
-# "lyrics depends on edit" means: if edit is reset, lyrics may be in a broken state.
-FLOW_RELATIONSHIPS = {
-    "edit": [],
-    "lyrics": ["edit"],
-    "audio": [],
-    "search": [],
-    "telegraph": [],
-}
-
-
 class Session:
     """Top-level session container. Stored directly in context.user_data["session"]."""
 
