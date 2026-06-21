@@ -1,11 +1,12 @@
 # Lyriphon Bot 🎵
 
-**Lyriphon** is a Telegram bot for building Telegraph lyric pages and attaching them to music files. Search a track, the bot pulls metadata from Deezer and lyrics from LRCLIB, publishes a formatted Telegraph page, and lets you attach a "Lyrics" button to an audio file before forwarding it to channels you manage.
+**Lyriphon** is a Telegram bot for building Telegraph lyric pages and attaching them to music files. Start either by searching with `/song` or by just sending an audio file directly — the bot pulls metadata from Deezer and lyrics from LRCLIB, publishes a formatted Telegraph page, and lets you attach a "Lyrics" button to the audio file before forwarding it to channels you manage.
 
 ---
 
 ## Features
 
+- **Two ways to start** — search with `/song <track name>`, or **just send an audio file** and the bot reads the title/artist from the file's tags (or filename) and searches automatically.
 - **Song search** — `/song <track name>` searches Deezer and returns a paginated list of matches.
 - **Automatic lyrics pages** — generates a [Telegraph](https://telegra.ph) page with cover art, metadata, and lyrics fetched from LRCLIB.
 - **Attach to audio** — send a music file and the bot attaches an inline **Lyrics** button linking to the Telegraph page.
@@ -18,13 +19,21 @@
 
 ## How it works
 
+There are two entry points that converge on the same flow:
+
 ```
-/song ─► Deezer search ─► pick track ─► LRCLIB lyrics ─► Telegraph page
-                                                              │
-            send audio file ─► attach "Lyrics" button ◄───────┘
+  /song <query> ─────────────┐
+                             ▼
+  send audio file ─► Deezer search ─► pick track ─► LRCLIB lyrics ─► Telegraph page
+  (reads tags/filename)                                                  │
+                              attach "Lyrics" button to the audio ◄───────┘
                                        │
                               send to your channel(s)
 ```
+
+When you send an audio file:
+- If there's **no active Telegraph page**, the bot parses the title/artist from the file's metadata (falling back to the filename, splitting on `Artist - Title`) and runs a Deezer search right away.
+- If a Telegraph page is **already in progress**, it asks what to do: **attach** the file to the current page, **search** using this file instead, or **cancel**.
 
 External services:
 - **Deezer API** — track / album / artist metadata (`services/deezer_api.py`)
@@ -141,13 +150,22 @@ tests/                      pytest suite
 | `/cancel` | Cancel the current edit |
 | `/session` | (owner only) Dump the current session state for debugging |
 
-**Typical flow**
+**Typical flow (search first)**
 
 1. `/song bohemian rhapsody`
 2. Pick a track from the results.
 3. The bot creates a Telegraph page with the lyrics.
 4. Send (or forward) the music file in the chat — the bot attaches a **Lyrics** button.
 5. Choose a channel to publish the tagged file. The bot must be an admin in that channel; it learns about your channels automatically when you add it.
+
+**Typical flow (audio first)**
+
+1. Send an audio file directly — no `/song` needed.
+2. The bot reads the title/artist from the file (or its filename) and searches Deezer automatically.
+3. Pick the matching track; the bot builds the Telegraph page and attaches the **Lyrics** button to your file.
+4. Choose a channel to publish it.
+
+   > If a Telegraph page is already in progress when you send a file, the bot first asks whether to **attach to the current page**, **search using this file**, or **cancel**.
 
 **Inline mode**: type `@your_bot_name <query>` in any chat to search directly.
 
