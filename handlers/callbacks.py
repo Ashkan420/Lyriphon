@@ -653,3 +653,5 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
             reply_markup=reply_markup
         )
+
+    await transition(session, SessionMode.IDLE, context.bot, query.message.chat_id)
