@@ -241,7 +241,7 @@ async def handle_edit_field_callback(update: Update, context: ContextTypes.DEFAU
                 "• You can send multiple messages\n"
                 "• Click Done when finished"
             )
-            markup = InlineKeyboardMarkup(done_cancel_buttons)
+            markup = InlineKeyboardMarkup(cancel_button)
 
             session.lyrics.buffer = []
             session.lyrics.message_ids = []
