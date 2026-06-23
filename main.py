@@ -1,7 +1,15 @@
-"""Bot entry point — builds the Application, registers all handlers, and starts polling."""
+"""Bot entry point — builds the Application, registers all handlers, and serves updates via webhook."""
 
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, InlineQueryHandler, filters, ChatMemberHandler
-from config import BOT_TOKEN
+from config import (
+    BOT_TOKEN,
+    WEBHOOK_URL,
+    WEBHOOK_PORT,
+    WEBHOOK_LISTEN,
+    WEBHOOK_PATH,
+    WEBHOOK_SECRET_TOKEN,
+)
+# WEBHOOK_URL is validated as required at config import time.
 from handlers.start import start_command, help_command
 from handlers.song_search import song_search, handle_search_page_callback
 from handlers.callbacks import handle_callback, send_to_channel_callback, handle_edit_field_callback, handle_new_field_value, cancel_edit_command, done_lyrics_command, handle_cancel_edit_callback, handle_done_lyrics_callback, handle_audio_decision_callback
@@ -45,5 +53,14 @@ app.add_handler(MessageHandler(filters.AUDIO, handle_music_file))
 
 
 if __name__ == "__main__":
-    print("Bot running...")
-    app.run_polling()
+    url_path = WEBHOOK_PATH.strip("/")
+    full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}/{url_path}"
+
+    print(f"Bot running in webhook mode on {WEBHOOK_LISTEN}:{WEBHOOK_PORT}/{url_path} ...")
+    app.run_webhook(
+        listen=WEBHOOK_LISTEN,
+        port=WEBHOOK_PORT,
+        url_path=url_path,
+        webhook_url=full_webhook_url,
+        secret_token=WEBHOOK_SECRET_TOKEN,
+    )

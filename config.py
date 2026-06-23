@@ -15,12 +15,27 @@ TELEGRAPH_ACCESS_TOKEN = os.getenv("TELEGRAPH_ACCESS_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 BOT_OWNER_ID = os.getenv("BOT_OWNER_ID")
 
+# --- Webhook configuration ---
+# Public HTTPS base URL where Telegram will deliver updates (e.g. https://my-app.example.com).
+# Required: the bot runs in webhook mode and refuses to start without it.
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+# Port to bind the webhook server to. PaaS platforms (Heroku, Render, ...) inject $PORT.
+WEBHOOK_PORT = int(os.getenv("PORT", "8080"))
+# Interface to listen on; 0.0.0.0 so the platform's router can reach it.
+WEBHOOK_LISTEN = os.getenv("WEBHOOK_LISTEN", "0.0.0.0")
+# Path component of the webhook endpoint (appended to WEBHOOK_URL).
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "webhook")
+# Optional shared secret echoed back by Telegram in the X-Telegram-Bot-Api-Secret-Token
+# header; PTB rejects requests that don't match it. Strongly recommended.
+WEBHOOK_SECRET_TOKEN = os.getenv("WEBHOOK_SECRET_TOKEN")
+
 # --- Validate required variables at import time ---
 
 _REQUIRED = {
     "BOT_TOKEN": BOT_TOKEN,
     "TELEGRAPH_ACCESS_TOKEN": TELEGRAPH_ACCESS_TOKEN,
     "DATABASE_URL": DATABASE_URL,
+    "WEBHOOK_URL": WEBHOOK_URL,
 }
 _missing = [name for name, val in _REQUIRED.items() if not val]
 if _missing:

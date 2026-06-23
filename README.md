@@ -47,7 +47,7 @@ External services:
 
 ```
 Lyriphon/
-├── main.py                          Entry point; registers handlers and starts polling
+├── main.py                          Entry point; registers handlers and serves updates via webhook
 ├── config.py                        Loads & validates environment variables
 ├── db.py                            asyncpg pool + channel persistence
 ├── core/
@@ -127,6 +127,11 @@ Lyriphon/
    | `TELEGRAPH_ACCESS_TOKEN` | ✅ | Token from the script above |
    | `DATABASE_URL` | ✅ | PostgreSQL connection string |
    | `BOT_OWNER_ID` | optional | Your Telegram user ID; restricts the `/session` debug command |
+   | `WEBHOOK_URL` | ✅ | Public HTTPS base URL Telegram delivers updates to (e.g. `https://your-app.example.com`) |
+   | `PORT` | optional | Port the webhook server binds to (default `8080`; PaaS platforms inject this) |
+   | `WEBHOOK_LISTEN` | optional | Interface to bind (default `0.0.0.0`) |
+   | `WEBHOOK_PATH` | optional | Endpoint path appended to `WEBHOOK_URL` (default `webhook`) |
+   | `WEBHOOK_SECRET_TOKEN` | optional | Shared secret Telegram echoes back in the `X-Telegram-Bot-Api-Secret-Token` header for verification (strongly recommended) |
 
    The bot refuses to start if any required variable is missing.
 
@@ -136,7 +141,14 @@ Lyriphon/
    python main.py
    ```
 
-   It runs in long-polling mode. A `Procfile` (`worker: python main.py`) is included for Heroku-style deployments.
+   The bot runs in **webhook mode**: on startup it registers `WEBHOOK_URL/WEBHOOK_PATH`
+   with Telegram and starts an HTTP server listening on `WEBHOOK_LISTEN:PORT`. Telegram
+   must be able to reach `WEBHOOK_URL` over HTTPS, so deploy behind a public TLS endpoint
+   (most PaaS platforms terminate TLS and inject `$PORT` for you). A `Procfile`
+   (`web: python main.py`) is included for Heroku-style deployments.
+
+   For production, set `WEBHOOK_SECRET_TOKEN` to a random string so the bot rejects any
+   request that doesn't carry the matching secret header.
 
 ---
 
